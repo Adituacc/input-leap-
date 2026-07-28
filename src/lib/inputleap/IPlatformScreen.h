@@ -26,6 +26,8 @@
 #include "inputleap/IKeyState.h"
 #include "inputleap/option_types.h"
 
+#include <vector>
+
 namespace inputleap {
 
 //! Screen interface
@@ -151,6 +153,7 @@ public:
     //@}
 
     virtual std::string& getDraggingFilename() = 0;
+    virtual std::vector<std::string> getDraggingPaths() = 0;
     virtual void clearDraggingFilename() = 0;
     virtual bool isDraggingStarted() = 0;
     virtual bool isFakeDraggingStarted() = 0;

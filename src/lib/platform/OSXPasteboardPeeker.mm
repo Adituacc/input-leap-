@@ -17,6 +17,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <set>
+#include <utility>
 
 namespace inputleap {
 
@@ -101,8 +103,10 @@ std::string write_payload(NSData* data, const std::string& suggested_name)
     return to_utf8(path);
 }
 
-std::string first_dragged_file(NSPasteboard* pasteboard)
+std::vector<std::string> dragged_files(NSPasteboard* pasteboard)
 {
+    std::vector<std::string> paths;
+    std::set<std::string> seen;
     NSDictionary* options = [NSDictionary
         dictionaryWithObject:[NSNumber numberWithBool:YES]
                       forKey:NSPasteboardURLReadingFileURLsOnlyKey];
@@ -110,16 +114,22 @@ std::string first_dragged_file(NSPasteboard* pasteboard)
                                                options:options];
     for (NSURL* url in urls) {
         if ([url isFileURL]) {
-            return to_utf8([url path]);
+            auto path = to_utf8([url path]);
+            if (!path.empty() && seen.insert(path).second) {
+                paths.push_back(std::move(path));
+            }
         }
     }
 
     // Compatibility with applications still publishing the legacy filename list.
     NSArray* files = [pasteboard propertyListForType:NSFilenamesPboardType];
-    if ([files count] > 0) {
-        return to_utf8([files objectAtIndex:0]);
+    for (NSString* file in files) {
+        auto path = to_utf8(file);
+        if (!path.empty() && seen.insert(path).second) {
+            paths.push_back(std::move(path));
+        }
     }
-    return {};
+    return paths;
 }
 
 std::string materialize_image(NSPasteboard* pasteboard)
@@ -170,22 +180,30 @@ std::string dragged_url(NSPasteboard* pasteboard)
 
 } // namespace
 
-std::string getDraggedFilePath()
+std::vector<std::string> getDraggedFilePaths()
 {
     NSPasteboard* pasteboard = [NSPasteboard pasteboardWithName:NSDragPboard];
 
-    auto path = first_dragged_file(pasteboard);
-    if (!path.empty()) {
-        return path;
+    auto paths = dragged_files(pasteboard);
+    if (!paths.empty()) {
+        return paths;
     }
 
     // Prefer actual image bytes over a source URL when both are present.
-    path = materialize_image(pasteboard);
+    auto path = materialize_image(pasteboard);
     if (!path.empty()) {
-        return path;
+        return {std::move(path)};
     }
 
-    return dragged_url(pasteboard);
+    path = dragged_url(pasteboard);
+    return path.empty() ? std::vector<std::string>{}
+                        : std::vector<std::string>{std::move(path)};
+}
+
+std::string getDraggedFilePath()
+{
+    auto paths = getDraggedFilePaths();
+    return paths.empty() ? std::string{} : std::move(paths.front());
 }
 
 } // namespace inputleap

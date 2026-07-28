@@ -286,6 +286,9 @@ enum class EventType : std::uint32_t {
     /// This event is a keepalive event.
     FILE_KEEPALIVE,
 
+    /// This event is sent after a transfer-v2 item is committed to disk.
+    TRANSFER_V2_RECEIVE_COMPLETED,
+
     /// The total number of known event types.
     EVENT_COUNT,
 };

@@ -16,11 +16,13 @@
  */
 
 #include "inputleap/DragInformation.h"
+#include "inputleap/DragPayload.h"
 #include "base/Log.h"
+#include "io/filesystem.h"
 
-#include <fstream>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 
 namespace inputleap {
 
@@ -34,42 +36,34 @@ void DragInformation::parseDragInfo(DragFileList& dragFileList, std::uint32_t fi
                                     std::string data)
 {
     size_t startPos = 0;
-    size_t findResult1 = 0;
-    size_t findResult2 = 0;
     dragFileList.clear();
-    std::string slash("\\");
-    if (data.find("/", startPos) != std::string::npos) {
-        slash = "/";
-    }
 
     std::uint32_t index = 0;
     while (index < fileNum) {
-        findResult1 = data.find(',', startPos);
-        findResult2 = data.find_last_of(slash, findResult1);
-
-        if (findResult1 == startPos) {
-            //TODO: file number does not match, something goes wrong
+        const auto filename_end = data.find(',', startPos);
+        if (filename_end == std::string::npos || filename_end == startPos) {
+            break;
+        }
+        const auto size_end = data.find(',', filename_end + 1);
+        if (size_end == std::string::npos) {
             break;
         }
 
-        // set filename
-        if (findResult1 - findResult2 > 1) {
-            auto filename = data.substr(findResult2 + 1, findResult1 - findResult2 - 1);
-            DragInformation di;
-            di.setFilename(filename);
-            dragFileList.push_back(di);
+        const auto full_name = data.substr(startPos, filename_end - startPos);
+        const auto separator = full_name.find_last_of("/\\");
+        const auto filename = separator == std::string::npos
+            ? full_name : full_name.substr(separator + 1);
+        if (filename.empty()) {
+            break;
         }
-        startPos = findResult1 + 1;
 
-        //set filesize
-        findResult2 = data.find(',', startPos);
-        if (findResult2 - findResult1 > 1) {
-            auto filesize = data.substr(findResult1 + 1, findResult2 - findResult1 - 1);
-            size_t size = stringToNum(filesize);
-            dragFileList.at(index).setFilesize(size);
-        }
-        startPos = findResult1 + 1;
+        auto filesize = data.substr(filename_end + 1, size_end - filename_end - 1);
+        DragInformation item;
+        item.setFilename(filename);
+        item.setFilesize(stringToNum(filesize));
+        dragFileList.push_back(std::move(item));
 
+        startPos = size_end + 1;
         ++index;
     }
 
@@ -98,9 +92,10 @@ std::string DragInformation::getDragFileExtension(std::string filename)
 int
 DragInformation::setupDragInfo(DragFileList& fileList, std::string& output)
 {
+    output.clear();
     int size = static_cast<int>(fileList.size());
     for (int i = 0; i < size; ++i) {
-        output.append(fileList.at(i).getFilename());
+        output.append(sanitize_drag_filename(fileList.at(i).getFilename()));
         output.append(",");
         std::string filesize = getFileSize(fileList.at(i).getFilename());
         output.append(filesize);
@@ -111,16 +106,12 @@ DragInformation::setupDragInfo(DragFileList& fileList, std::string& output)
 
 bool DragInformation::isFileValid(std::string filename)
 {
-    bool result = false;
-    std::fstream file(filename.c_str(), std::ios::in|std::ios::binary);
-
-    if (file.is_open()) {
-        result = true;
+    try {
+        return fs::exists(fs::u8path(filename));
     }
-
-    file. close();
-
-    return result;
+    catch (const fs::filesystem_error&) {
+        return false;
+    }
 }
 
 size_t DragInformation::stringToNum(std::string& str)
@@ -134,23 +125,24 @@ size_t DragInformation::stringToNum(std::string& str)
     return size;
 }
 
-std::string DragInformation::getFileSize(std::string& filename)
+std::string DragInformation::getFileSize(const std::string& filename)
 {
-    std::fstream file(filename.c_str(), std::ios::in|std::ios::binary);
-
-    if (!file.is_open()) {
-      throw std::runtime_error("failed to get file size");
+    std::uintmax_t size = 0;
+    try {
+        const auto path = fs::u8path(filename);
+        if (fs::is_regular_file(path)) {
+            size = fs::file_size(path);
+        }
+        else if (!fs::is_directory(path)) {
+            throw std::runtime_error("drag source is not a file or directory");
+        }
     }
-
-    // check file size
-    file.seekg (0, std::ios::end);
-    size_t size = static_cast<size_t>(file.tellg());
+    catch (const fs::filesystem_error& error) {
+        throw std::runtime_error(error.what());
+    }
 
     std::stringstream ss;
     ss << size;
-
-    file. close();
-
     return ss.str();
 }
 

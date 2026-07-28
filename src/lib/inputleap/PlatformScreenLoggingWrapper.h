@@ -44,6 +44,7 @@ public:
     bool isPrimary() const override;
 
     std::string& getDraggingFilename() override;
+    std::vector<std::string> getDraggingPaths() override;
     void clearDraggingFilename() override;
     bool isDraggingStarted() override;
     bool isFakeDraggingStarted() override;

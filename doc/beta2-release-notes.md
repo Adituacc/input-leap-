@@ -6,8 +6,9 @@ This is a Windows x64 test build, not a production-signed release.
 
 - TLS 1.2+ hardening, mutual certificate authentication for new profiles,
   bounded pre-authentication handshakes, and stricter packet parsing.
-- macOS capture support for Finder items, PNG/TIFF image data, and HTTP(S)
-  links, with safe Windows materialization.
+- Bidirectional macOS/Windows capture for multiple files and folders.
+- Cross-platform image and HTTP(S) link materialization, plus Windows OLE
+  capture for Unicode text and virtual files such as attachments.
 - Transfer-v2 negotiation between matching fork peers with protocol 1.6
   fallback.
 - Streaming 256 KiB chunks, recursive folder transfer, SHA-256 verification,
@@ -16,7 +17,7 @@ This is a Windows x64 test build, not a production-signed release.
 
 ## Test status
 
-The Windows Debug and Release builds pass 158 core unit tests, 26 integration
+The Windows Debug and Release builds pass 162 core unit tests, 26 integration
 tests, and 60 Qt GUI tests. Live integration coverage includes 10 MiB
 client-to-server and server-to-client transfer-v2 streams.
 
@@ -25,8 +26,6 @@ client-to-server and server-to-client transfer-v2 streams.
 - This package is not code-signed.
 - The macOS side must be built from the matching source package and tested on
   macOS; a Windows build cannot produce or validate Apple binaries.
-- Several selected Finder items are not captured together yet. Drag their
-  containing folder.
 - A network disconnect restarts a transfer. Persistent staging and resume
   offsets are implemented, but live reconnect negotiation is not.
 - Windows receives the item in the Desktop or configured drop directory; it

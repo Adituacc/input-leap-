@@ -20,12 +20,16 @@
 #include "common/common.h"
 
 #include <string>
+#include <vector>
 
 namespace inputleap {
 
-// Returns a local file path suitable for the existing drag transfer protocol.
-// Native files are returned directly. Image and URL pasteboard payloads are
+// Returns local paths suitable for the drag transfer protocol. Native Finder
+// selections are returned together. Image and URL pasteboard payloads are
 // materialized into a temporary file first.
+std::vector<std::string> getDraggedFilePaths();
+
+// Compatibility helper for callers that only support a single item.
 std::string getDraggedFilePath();
 
 } // namespace inputleap

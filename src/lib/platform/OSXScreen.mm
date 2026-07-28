@@ -42,6 +42,7 @@
 #include <AvailabilityMacros.h>
 #include <IOKit/hidsystem/event_status_driver.h>
 #include <AppKit/NSEvent.h>
+#include <utility>
 
 namespace inputleap {
 
@@ -553,25 +554,28 @@ OSXScreen::fakeMouseButton(ButtonID id, bool press)
 void OSXScreen::get_drop_target_thread()
 {
 #if defined(MAC_OS_X_VERSION_10_7)
-    char* cstr = nullptr;
+    std::string dropTarget;
 
 	// wait for 5 secs for the drop destinaiton string to be filled.
     std::uint32_t timeout = inputleap::current_time_seconds() + 5;
 
     while (inputleap::current_time_seconds() < timeout) {
 		CFStringRef cfstr = getCocoaDropTarget();
-		cstr = CFStringRefToUTF8String(cfstr);
+		char* cstr = CFStringRefToUTF8String(cfstr);
 		CFRelease(cfstr);
 
-        if (cstr != nullptr) {
+        if (cstr != nullptr && cstr[0] != '\0') {
+            dropTarget = cstr;
+            free(cstr);
 			break;
 		}
+        free(cstr);
 		inputleap::this_thread_sleep(.1f);
 	}
 
-    if (cstr != nullptr) {
-		LOG_DEBUG("drop target: %s", cstr);
-		m_dropTarget = cstr;
+    if (!dropTarget.empty()) {
+		LOG_DEBUG("drop target: %s", dropTarget.c_str());
+		m_dropTarget = std::move(dropTarget);
 	}
 	else {
 		LOG_ERR("failed to get drop target");
@@ -834,25 +838,25 @@ OSXScreen::leave()
     hideCursor();
 
 	if (isDraggingStarted()) {
-        std::string& fileList = getDraggingFilename();
+        const auto drag_paths = getDraggingPaths();
 
 		if (!m_isPrimary) {
-			if (fileList.empty() == false) {
+			if (!drag_paths.empty()) {
 				ClientApp& app = ClientApp::instance();
 				Client* client = app.getClientPtr();
 
-				DragInformation di;
-				di.setFilename(fileList);
 				DragFileList dragFileList;
-				dragFileList.push_back(di);
+                for (const auto& path : drag_paths) {
+                    DragInformation info_item;
+                    info_item.setFilename(path);
+                    dragFileList.push_back(std::move(info_item));
+                }
                 std::string info;
 				std::uint32_t fileCount = DragInformation::setupDragInfo(dragFileList, info);
 				client->sendDragInfo(fileCount, info, info.size());
 				LOG_DEBUG("send dragging file to server");
 
-				// TODO: what to do with multiple file or even
-				// a folder
-				client->sendFileToServer(fileList);
+				client->sendFilesToServer(drag_paths);
 			}
 		}
 		m_draggingStarted = false;
@@ -1968,10 +1972,11 @@ OSXScreen::CFStringRefToUTF8String(CFStringRef aString)
 	CFIndex maxSize = CFStringGetMaximumSizeForEncoding(
 		length,
 		kCFStringEncodingUTF8);
-	char* buffer = (char*)malloc(maxSize);
-	if (CFStringGetCString(aString, buffer, maxSize, kCFStringEncodingUTF8)) {
+	char* buffer = (char*)malloc(maxSize + 1);
+	if (CFStringGetCString(aString, buffer, maxSize + 1, kCFStringEncodingUTF8)) {
 		return buffer;
 	}
+    free(buffer);
     return nullptr;
 }
 
@@ -1980,9 +1985,12 @@ OSXScreen::fakeDraggingFiles(DragFileList fileList)
 {
 	m_fakeDraggingStarted = true;
     std::string fileExt;
-	if (fileList.size() == 1) {
+	if (!fileList.empty()) {
 		fileExt = DragInformation::getDragFileExtension(
 			fileList.at(0).getFilename());
+        if (fileExt.empty()) {
+            fileExt = "data";
+        }
 	}
 
 #if defined(MAC_OS_X_VERSION_10_7)
@@ -1994,22 +2002,27 @@ OSXScreen::fakeDraggingFiles(DragFileList fileList)
 
 std::string& OSXScreen::getDraggingFilename()
 {
-	if (m_draggingStarted) {
-        auto drag_path = getDraggedFilePath();
-        if (drag_path.empty()) {
-			m_draggingFilename.clear();
-		}
-		else {
-            LOG_DEBUG("drag payload path: %s", drag_path.c_str());
-            m_draggingFilename = drag_path;
-		}
-
-		// fake a escape key down and up then left mouse button up
-		fakeKeyDown(kKeyEscape, 8192, 1);
-		fakeKeyUp(1);
-		fakeMouseButton(kButtonLeft, false);
-	}
+    auto paths = getDraggingPaths();
+    m_draggingFilename = paths.empty() ? std::string{} : paths.front();
 	return m_draggingFilename;
+}
+
+std::vector<std::string> OSXScreen::getDraggingPaths()
+{
+    if (m_draggingStarted) {
+        m_draggingPaths = getDraggedFilePaths();
+        for (const auto& path : m_draggingPaths) {
+            LOG_DEBUG("drag payload path: %s", path.c_str());
+        }
+        m_draggingFilename =
+            m_draggingPaths.empty() ? std::string{} : m_draggingPaths.front();
+
+        // End the local drag after its payload has been captured.
+        fakeKeyDown(kKeyEscape, 8192, 1);
+        fakeKeyUp(1);
+        fakeMouseButton(kButtonLeft, false);
+    }
+    return PlatformScreen::getDraggingPaths();
 }
 
 void

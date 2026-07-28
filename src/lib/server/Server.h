@@ -152,6 +152,7 @@ public:
 
     //! Create a new thread and use it to send file to client
     void sendFileToClient(const std::string& filename);
+    void sendFilesToClient(const std::vector<std::string>& filenames);
 
     //! Received dragging information from client
     void dragInfoReceived(std::uint32_t fileNum, std::string content);
@@ -363,7 +364,7 @@ private:
     void forceLeaveClient(BaseClientProxy* client);
 
     // thread function for sending file
-    void send_file_thread(std::string filename);
+    void send_file_thread(std::vector<std::string> filenames);
 
     // thread function for writing file to drop directory
     void write_to_drop_dir_thread();

@@ -9,8 +9,12 @@
 
 #include "inputleap/DragPayload.h"
 
+#include "inputleap/TransferHash.h"
+#include "io/filesystem.h"
+
 #include <algorithm>
 #include <cctype>
+#include <fstream>
 #include <set>
 
 namespace inputleap {
@@ -38,6 +42,23 @@ bool is_windows_reserved_name(const std::string& filename)
     return reserved.count(stem) != 0;
 }
 
+std::string escape_html(const std::string& value)
+{
+    std::string result;
+    result.reserve(value.size());
+    for (char c : value) {
+        switch (c) {
+        case '&': result += "&amp;"; break;
+        case '<': result += "&lt;"; break;
+        case '>': result += "&gt;"; break;
+        case '"': result += "&quot;"; break;
+        case '\'': result += "&#39;"; break;
+        default: result += c; break;
+        }
+    }
+    return result;
+}
+
 } // namespace
 
 bool is_supported_drag_url(const std::string& value)
@@ -56,6 +77,18 @@ std::string make_windows_internet_shortcut(const std::string& url)
         return {};
     }
     return "[InternetShortcut]\r\nURL=" + url + "\r\n";
+}
+
+std::string make_portable_link_page(const std::string& url, const std::string& title)
+{
+    if (!is_supported_drag_url(url)) {
+        return {};
+    }
+    const auto safe_url = escape_html(url);
+    const auto safe_title = escape_html(title.empty() ? "Dragged Link" : title);
+    return "<!doctype html><meta charset=\"utf-8\"><title>" + safe_title +
+           "</title><meta http-equiv=\"refresh\" content=\"0;url=" + safe_url +
+           "\"><a href=\"" + safe_url + "\">" + safe_title + "</a>\n";
 }
 
 std::string sanitize_drag_filename(const std::string& value, const std::string& fallback)
@@ -83,6 +116,38 @@ std::string sanitize_drag_filename(const std::string& value, const std::string& 
         filename.insert(filename.begin(), '_');
     }
     return filename;
+}
+
+std::string materialize_drag_payload(const std::string& bytes,
+                                     const std::string& suggested_name)
+{
+    constexpr std::size_t kMaxMaterializedPayloadSize = 64u * 1024u * 1024u;
+    if (bytes.empty() || bytes.size() > kMaxMaterializedPayloadSize) {
+        return {};
+    }
+
+    const auto root = fs::temp_directory_path() / fs::u8path("InputLeapDragPayloads");
+    std::error_code error;
+    fs::create_directories(root, error);
+    if (error) {
+        return {};
+    }
+
+    const auto directory = root / fs::u8path(create_transfer_id());
+    fs::create_directory(directory, error);
+    if (error) {
+        return {};
+    }
+
+    const auto path = directory / fs::u8path(sanitize_drag_filename(suggested_name));
+    std::ofstream stream;
+    open_utf8_path(stream, path, std::ios::out | std::ios::binary);
+    if (!stream.is_open()) {
+        return {};
+    }
+    stream.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    stream.close();
+    return stream ? path.u8string() : std::string{};
 }
 
 } // namespace inputleap

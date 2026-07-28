@@ -87,6 +87,7 @@ public:
 
     //! Create a new thread and use it to send file to Server
     void sendFileToServer(const std::string& filename);
+    void sendFilesToServer(const std::vector<std::string>& filenames);
 
     //! Send dragging file information back to server
     void sendDragInfo(std::uint32_t fileCount, std::string& info, size_t size);
@@ -165,7 +166,7 @@ private:
     void send_event(EventType);
     void sendConnectionFailedEvent(const char* msg);
     void send_file_chunk(const FileChunk& data);
-    void send_file_thread(std::string filename);
+    void send_file_thread(std::vector<std::string> filenames);
     void write_to_drop_dir_thread();
     void setupConnecting();
     void setupConnection();

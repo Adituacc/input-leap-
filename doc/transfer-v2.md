@@ -59,12 +59,13 @@ Working and covered by Windows unit/integration tests:
 - cancellation and per-transfer cleanup;
 - persistent partial data and engine-level resume offsets;
 - SHA-256 verification and safe, non-overwriting commit.
+- multi-item file and folder capture on macOS and Windows;
+- Windows OLE capture for images, links, text, and virtual files;
+- native macOS promised-file destination selection.
 
 Still required for a finished cross-platform product:
 
-- macOS multi-selection capture;
 - live reconnect/resume negotiation;
 - GUI progress, pause, resume, and cancel controls;
 - Windows OLE/Explorer drop injection at the pointer;
-- reverse Windows-to-macOS drag capture and native macOS destination behavior;
 - signed Windows and macOS release artifacts and platform acceptance testing.

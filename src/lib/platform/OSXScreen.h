@@ -98,6 +98,7 @@ public:
     virtual bool isPrimary() const;
     virtual void fakeDraggingFiles(DragFileList fileList);
     virtual std::string& getDraggingFilename();
+    std::vector<std::string> getDraggingPaths() override;
 
     const std::string& getDropTarget() const { return m_dropTarget; }
     void waitForCarbonLoop() const;

@@ -1674,9 +1674,9 @@ Server::onMouseUp(ButtonID id)
 
 	if (m_args.m_enableDragDrop) {
 		if (!m_screen->isOnScreen()) {
-            std::string& file = m_screen->getDraggingFilename();
-			if (!file.empty()) {
-				sendFileToClient(file);
+            auto paths = m_screen->getDraggingPaths();
+			if (!paths.empty()) {
+				sendFilesToClient(paths);
 			}
 		}
 
@@ -1794,10 +1794,10 @@ bool Server::onMouseMovePrimary(std::int32_t x, std::int32_t y)
 void Server::send_drag_info_thread(BaseClientProxy* newScreen)
 {
 	m_dragFileList.clear();
-    std::string& dragFileList = m_screen->getDraggingFilename();
-	if (!dragFileList.empty()) {
+    const auto drag_paths = m_screen->getDraggingPaths();
+	for (const auto& path : drag_paths) {
 		DragInformation di;
-		di.setFilename(dragFileList);
+		di.setFilename(path);
 		m_dragFileList.push_back(di);
 	}
 
@@ -2245,12 +2245,19 @@ Server::isReceivedFileSizeValid()
 void
 Server::sendFileToClient(const std::string& filename)
 {
+    sendFilesToClient({filename});
+}
+
+void
+Server::sendFilesToClient(const std::vector<std::string>& filenames)
+{
 	if (m_sendFileThread != nullptr) {
 		m_transferSendProgress.cancel();
 		StreamChunker::interruptFile();
 	}
 
-    m_sendFileThread = new Thread([this, filename]() { send_file_thread(filename); });
+    m_sendFileThread =
+        new Thread([this, filenames]() { send_file_thread(filenames); });
 }
 
 void Server::on_transfer_frame_sending(const TransferFrame& frame)
@@ -2262,12 +2269,20 @@ void Server::on_transfer_frame_sending(const TransferFrame& frame)
     m_active->transfer_frame_sending(frame);
 }
 
-void Server::send_file_thread(std::string filename)
+void Server::send_file_thread(std::vector<std::string> filenames)
 {
 	try {
-		LOG_DEBUG("sending file to client, filename=%s", filename.c_str());
+        if (filenames.empty()) {
+            throw std::invalid_argument("no drag sources were supplied");
+        }
+		LOG_DEBUG("sending %zi dragged item(s) to client", filenames.size());
         if (m_active != nullptr && m_active->supportsTransferV2()) {
-            auto plan = TransferCatalog::plan_from_paths({fs::u8path(filename)});
+            std::vector<fs::path> paths;
+            paths.reserve(filenames.size());
+            for (const auto& filename : filenames) {
+                paths.push_back(fs::u8path(filename));
+            }
+            auto plan = TransferCatalog::plan_from_paths(paths);
             TransferSender sender(&m_transferSendProgress);
             sender.send(plan, [this](const TransferFrame& frame) {
                 m_events->add_event(
@@ -2276,7 +2291,10 @@ void Server::send_file_thread(std::string filename)
             });
         }
         else {
-            StreamChunker::sendFile(filename.c_str(), m_events, this);
+            if (filenames.size() > 1) {
+                LOG_WARN("legacy peer supports one dragged item; sending the first item only");
+            }
+            StreamChunker::sendFile(filenames.front().c_str(), m_events, this);
         }
 	}
 	catch (std::runtime_error &error) {
@@ -2288,13 +2306,25 @@ void Server::send_file_thread(std::string filename)
 
 void Server::handleTransferV2Frame(const TransferFrame& frame)
 {
+    if (frame.type == TransferFrameType::Manifest) {
+        if (m_screen->getDropTarget().empty()) {
+            const double deadline = inputleap::current_time_seconds() + 6.0;
+            while (m_screen->isFakeDraggingStarted() &&
+                   inputleap::current_time_seconds() < deadline) {
+                inputleap::this_thread_sleep(.05f);
+            }
+        }
+        if (m_screen->getDropTarget().empty()) {
+            throw std::runtime_error("drag destination was not selected");
+        }
+    }
     const auto completed =
         m_transferReceiver.handle_frame(frame, fs::u8path(m_screen->getDropTarget()));
     for (const auto& path : completed) {
         LOG_INFO("completed transfer-v2 item \"%s\"", path.u8string().c_str());
     }
     if (!completed.empty()) {
-        m_events->add_event(EventType::FILE_RECEIVE_COMPLETED, this);
+        m_events->add_event(EventType::TRANSFER_V2_RECEIVE_COMPLETED, this);
     }
 }
 

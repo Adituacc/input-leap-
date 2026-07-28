@@ -8,6 +8,7 @@
  */
 
 #include "inputleap/DragPayload.h"
+#include "io/filesystem.h"
 
 #include <gtest/gtest.h>
 #include <string>
@@ -30,6 +31,15 @@ TEST(DragPayloadTest, BuildsWindowsInternetShortcut)
     EXPECT_TRUE(make_windows_internet_shortcut("javascript:alert(1)").empty());
 }
 
+TEST(DragPayloadTest, BuildsPortableEscapedLinkPage)
+{
+    const auto page = make_portable_link_page(
+        "https://example.com/image?a=1&b=2", "Cats & Dogs");
+    EXPECT_NE(page.find("Cats &amp; Dogs"), std::string::npos);
+    EXPECT_NE(page.find("a=1&amp;b=2"), std::string::npos);
+    EXPECT_TRUE(make_portable_link_page("javascript:alert(1)").empty());
+}
+
 TEST(DragPayloadTest, SanitizesCrossPlatformFilename)
 {
     EXPECT_EQ(sanitize_drag_filename("/tmp/folder/cat:photo,1?.png"),
@@ -37,6 +47,15 @@ TEST(DragPayloadTest, SanitizesCrossPlatformFilename)
     EXPECT_EQ(sanitize_drag_filename("CON.txt"), "_CON.txt");
     EXPECT_EQ(sanitize_drag_filename("../"), "InputLeap Drop");
     EXPECT_EQ(sanitize_drag_filename("name. "), "name");
+}
+
+TEST(DragPayloadTest, MaterializesPayloadWithPortableName)
+{
+    const auto path = materialize_drag_payload("image bytes", "cat:photo?.png");
+    ASSERT_FALSE(path.empty());
+    EXPECT_EQ(fs::u8path(path).filename().u8string(), "cat_photo_.png");
+    EXPECT_TRUE(fs::is_regular_file(fs::u8path(path)));
+    fs::remove_all(fs::u8path(path).parent_path());
 }
 
 } // namespace inputleap

@@ -32,7 +32,8 @@ public:
     ~DragInformation() { }
 
     std::string& getFilename() { return m_filename; }
-    void setFilename(std::string& name) { m_filename = name; }
+    const std::string& getFilename() const { return m_filename; }
+    void setFilename(const std::string& name) { m_filename = name; }
     size_t getFilesize() { return m_filesize; }
     void setFilesize(size_t size) { m_filesize = size; }
 
@@ -47,7 +48,7 @@ public:
 
 private:
     static size_t stringToNum(std::string& str);
-    static std::string getFileSize(std::string& filename);
+    static std::string getFileSize(const std::string& filename);
 
 private:
     std::string m_filename;

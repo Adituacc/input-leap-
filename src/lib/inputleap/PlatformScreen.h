@@ -56,7 +56,20 @@ public:
     bool isDraggingStarted() override;
     bool isFakeDraggingStarted() override { return m_fakeDraggingStarted; }
     std::string& getDraggingFilename() override { return m_draggingFilename; }
-    void clearDraggingFilename() override { }
+    std::vector<std::string> getDraggingPaths() override
+    {
+        if (!m_draggingPaths.empty()) {
+            return m_draggingPaths;
+        }
+        return m_draggingFilename.empty()
+            ? std::vector<std::string>{}
+            : std::vector<std::string>{m_draggingFilename};
+    }
+    void clearDraggingFilename() override
+    {
+        m_draggingFilename.clear();
+        m_draggingPaths.clear();
+    }
 
     // IPlatformScreen overrides
 
@@ -86,6 +99,7 @@ protected:
 
 protected:
     std::string m_draggingFilename;
+    std::vector<std::string> m_draggingPaths;
     bool m_draggingStarted;
     bool m_fakeDraggingStarted;
 };

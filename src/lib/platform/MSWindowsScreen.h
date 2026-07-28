@@ -121,6 +121,7 @@ public:
     virtual bool isPrimary() const;
     virtual void fakeDraggingFiles(DragFileList fileList);
     virtual std::string& getDraggingFilename();
+    std::vector<std::string> getDraggingPaths() override;
     virtual const std::string& getDropTarget() const;
     virtual void setDropTarget(const std::string&);
 

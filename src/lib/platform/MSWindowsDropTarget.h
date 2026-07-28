@@ -17,7 +17,9 @@
 
 #pragma once
 
+#include <mutex>
 #include <string>
+#include <vector>
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #include <oleidl.h>
@@ -42,8 +44,9 @@ public:
     HRESULT __stdcall    DragLeave(void);
     HRESULT __stdcall    Drop(IDataObject* dataObject, DWORD keyState, POINTL point, DWORD* effect);
 
-    void setDraggingFilename(char* const);
+    void setDraggingPaths(std::vector<std::string> paths);
     std::string getDraggingFilename();
+    std::vector<std::string> getDraggingPaths();
     void clearDraggingFilename();
 
     static MSWindowsDropTarget& instance();
@@ -53,7 +56,8 @@ private:
 
     long m_refCount;
     bool m_allowDrop;
-    std::string m_dragFilename;
+    std::vector<std::string> m_dragPaths;
+    std::mutex m_dragMutex;
 
     static MSWindowsDropTarget*
                         s_instance;

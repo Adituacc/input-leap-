@@ -366,17 +366,22 @@ void MSWindowsScreen::leave()
 
 void MSWindowsScreen::send_drag_thread()
 {
-    std::string& draggingFilename = getDraggingFilename();
-    size_t size = draggingFilename.size();
-
-    if (draggingFilename.empty() == false) {
+    auto draggingPaths = getDraggingPaths();
+    if (!draggingPaths.empty()) {
         ClientApp& app = ClientApp::instance();
         Client* client = app.getClientPtr();
-        std::uint32_t fileCount = 1;
-        LOG_DEBUG("send dragging info to server: %s", draggingFilename.c_str());
-        client->sendDragInfo(fileCount, draggingFilename, size);
-        LOG_DEBUG("send dragging file to server");
-        client->sendFileToServer(draggingFilename);
+        DragFileList drag_files;
+        for (const auto& path : draggingPaths) {
+            DragInformation info;
+            info.setFilename(path);
+            drag_files.push_back(std::move(info));
+            LOG_DEBUG("send dragging info to server: %s", path.c_str());
+        }
+        std::string wire_info;
+        const auto file_count = DragInformation::setupDragInfo(drag_files, wire_info);
+        client->sendDragInfo(file_count, wire_info, wire_info.size());
+        LOG_DEBUG("send %zi dragged item(s) to server", draggingPaths.size());
+        client->sendFilesToServer(draggingPaths);
     }
 
     m_draggingStarted = false;
@@ -1260,7 +1265,7 @@ MSWindowsScreen::onMouseButton(WPARAM wParam, LPARAM lParam)
         if (pressed) {
             m_buttons[button] = true;
             if (button == kButtonLeft) {
-                m_draggingFilename.clear();
+                clearDraggingFilename();
                 LOG_DEBUG2("dragging filename is cleared");
             }
         }
@@ -1833,9 +1838,16 @@ MSWindowsScreen::fakeDraggingFiles(DragFileList fileList)
 
 std::string& MSWindowsScreen::getDraggingFilename()
 {
+    auto paths = getDraggingPaths();
+    m_draggingFilename = paths.empty() ? std::string{} : paths.front();
+    return m_draggingFilename;
+}
+
+std::vector<std::string> MSWindowsScreen::getDraggingPaths()
+{
     if (m_draggingStarted) {
         m_dropTarget->clearDraggingFilename();
-        m_draggingFilename.clear();
+        PlatformScreen::clearDraggingFilename();
 
         int halfSize = m_dropWindowSize / 2;
 
@@ -1858,33 +1870,35 @@ std::string& MSWindowsScreen::getDraggingFilename()
         fakeKeyUp(1);
         fakeMouseButton(kButtonLeft, false);
 
-        std::string filename;
+        std::vector<std::string> paths;
         DOUBLE timeout = inputleap::current_time_seconds() + .5f;
         while (inputleap::current_time_seconds() < timeout) {
             inputleap::this_thread_sleep(.05f);
-            filename = m_dropTarget->getDraggingFilename();
-            if (!filename.empty()) {
+            paths = m_dropTarget->getDraggingPaths();
+            if (!paths.empty()) {
                 break;
             }
         }
 
         ShowWindow(m_dropWindow, SW_HIDE);
 
-        if (!filename.empty()) {
-            if (DragInformation::isFileValid(filename)) {
-                m_draggingFilename = filename;
+        for (const auto& path : paths) {
+            if (DragInformation::isFileValid(path)) {
+                m_draggingPaths.push_back(path);
             }
             else {
-                LOG_ERR("drag file name is invalid: %s", filename.c_str());
+                LOG_ERR("drag item is invalid: %s", path.c_str());
             }
         }
 
-        if (m_draggingFilename.empty()) {
-            LOG_ERR("failed to get drag file name from OLE");
+        if (m_draggingPaths.empty()) {
+            LOG_ERR("failed to get drag payload from OLE");
         }
+        m_draggingFilename =
+            m_draggingPaths.empty() ? std::string{} : m_draggingPaths.front();
     }
 
-    return m_draggingFilename;
+    return PlatformScreen::getDraggingPaths();
 }
 
 const std::string&

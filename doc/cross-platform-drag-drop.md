@@ -1,15 +1,19 @@
-# macOS to Windows drag and drop
+# macOS and Windows drag and drop
 
-This fork extends the existing Input Leap drag-transfer path for drags that
-start on macOS and cross onto a Windows screen.
+This fork extends the existing Input Leap drag-transfer path in both directions
+between macOS and Windows.
 
 ## Supported payloads
 
-- A Finder file is transferred with its original contents.
-- A Finder folder is recursively transferred with its directory structure.
-- PNG data published by an application is transferred as `Dragged Image.png`.
-- TIFF image data is transferred as `Dragged Image.tiff`.
-- An HTTP or HTTPS link is transferred as a Windows Internet Shortcut (`.url`).
+- One or several files keep their original contents and names.
+- Folders are recursively transferred with their directory structure.
+- Images published directly by an application are materialized as an image
+  file. macOS accepts PNG and TIFF; Windows accepts PNG and DIB/BMP.
+- HTTP or HTTPS links are materialized as `.url` shortcuts for Windows or
+  portable HTML link files for macOS.
+- Windows Unicode text drags are materialized as UTF-8 text files.
+- Windows virtual-file drags, including attachments and generated files, are
+  materialized from the OLE stream before transfer.
 
 Image bytes take precedence over a source URL when an application publishes
 both. Unsupported URL schemes, embedded line breaks, and materialized image
@@ -21,13 +25,13 @@ with SHA-256 before making it visible, permits at most 2,048 manifest entries,
 and caps one transfer at 64 GiB. A peer using protocol 1.6 falls back to the
 legacy in-memory path, which is limited to one file and 256 MiB.
 
-The Windows receiver writes the item to the configured drop directory. If no
-drop directory is configured, the Windows desktop is used. Existing files are
-not overwritten; Input Leap adds ` (1)`, ` (2)`, and so on.
+The receiver writes each item to the selected or configured drop directory.
+Windows uses the desktop when no drop directory is configured. Existing files
+are not overwritten; Input Leap adds ` (1)`, ` (2)`, and so on.
 
-This implementation materializes a file on Windows. It does not yet synthesize
-a native Windows OLE drag object for dropping directly into an arbitrary
-application.
+macOS uses its native promised-file destination handoff. Windows currently
+materializes received items in the drop directory; it does not yet synthesize
+a native Windows OLE drag object inside an arbitrary application.
 
 ## User setup
 
@@ -35,16 +39,13 @@ application.
 2. In **Configure Server > Advanced server settings**, enable
    **Enable drag and drop for files, images, and links**.
 3. Start the server and client normally with TLS enabled.
-4. On macOS, click and hold a Finder file, browser image, or browser link.
-5. Drag the pointer across the configured edge onto the Windows screen.
+4. Click and hold one or several supported items on either computer.
+5. Drag the pointer across the configured edge onto the other screen.
 6. Release the mouse button and wait for the completion message in the log.
 7. Find the resulting item on the Windows desktop or configured drop directory.
 
-Both the macOS and Windows builds must contain this fork's changes. An older
-macOS build only recognizes local Finder files.
-
-Selecting several Finder items at once is not yet exposed by the macOS capture
-adapter. Drag the containing folder to transfer several files in this beta.
+Both the macOS and Windows builds must contain this fork's changes. Protocol
+1.6 peers still receive one ordinary file through the legacy transfer path.
 
 ## macOS build
 
@@ -59,8 +60,12 @@ permissions to control input and observe the cross-screen drag.
 ## Acceptance checklist
 
 - Drag a Finder file and verify its SHA-256 hash matches on Windows.
+- Drag several Finder files together and verify every item arrives.
+- Drag Windows files, a folder, and several selected items to macOS.
 - Drag a PNG from Safari and Chrome and verify it opens correctly.
-- Drag a link and verify the `.url` shortcut opens the expected HTTPS address.
+- Drag a link in each direction and verify the HTML file opens the expected
+  HTTPS address.
+- Drag Windows text and a virtual attachment and verify their contents.
 - Repeat the same filename twice and verify the first file is not overwritten.
 - Try a `javascript:` or `file:` URL and verify no shortcut is transferred.
 - Verify a normal pointer switch without the left button held does not initiate

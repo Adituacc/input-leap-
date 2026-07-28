@@ -446,6 +446,11 @@ std::string& Screen::getDraggingFilename() const
     return m_screen->getDraggingFilename();
 }
 
+std::vector<std::string> Screen::getDraggingPaths() const
+{
+    return m_screen->getDraggingPaths();
+}
+
 void
 Screen::clearDraggingFilename()
 {

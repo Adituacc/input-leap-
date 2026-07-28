@@ -762,12 +762,19 @@ Client::isReceivedFileSizeValid()
 void
 Client::sendFileToServer(const std::string& filename)
 {
+    sendFilesToServer({filename});
+}
+
+void
+Client::sendFilesToServer(const std::vector<std::string>& filenames)
+{
     if (m_sendFileThread != nullptr) {
         m_transferSendProgress.cancel();
         StreamChunker::interruptFile();
     }
 
-    m_sendFileThread = new Thread([this, filename]() { send_file_thread(filename); });
+    m_sendFileThread =
+        new Thread([this, filenames]() { send_file_thread(filenames); });
 }
 
 void Client::handle_transfer_frame_sending(const Event& event)
@@ -776,11 +783,19 @@ void Client::handle_transfer_frame_sending(const Event& event)
         event.get_data_as<TransferFrame>());
 }
 
-void Client::send_file_thread(std::string filename)
+void Client::send_file_thread(std::vector<std::string> filenames)
 {
     try {
+        if (filenames.empty()) {
+            throw std::invalid_argument("no drag sources were supplied");
+        }
         if (supportsTransferV2()) {
-            auto plan = TransferCatalog::plan_from_paths({fs::u8path(filename)});
+            std::vector<fs::path> paths;
+            paths.reserve(filenames.size());
+            for (const auto& filename : filenames) {
+                paths.push_back(fs::u8path(filename));
+            }
+            auto plan = TransferCatalog::plan_from_paths(paths);
             TransferSender sender(&m_transferSendProgress);
             sender.send(plan, [this](const TransferFrame& frame) {
                 m_events->add_event(
@@ -789,7 +804,10 @@ void Client::send_file_thread(std::string filename)
             });
         }
         else {
-            StreamChunker::sendFile(filename.c_str(), m_events, this);
+            if (filenames.size() > 1) {
+                LOG_WARN("legacy peer supports one dragged item; sending the first item only");
+            }
+            StreamChunker::sendFile(filenames.front().c_str(), m_events, this);
         }
     }
     catch (std::runtime_error& error) {
@@ -801,13 +819,25 @@ void Client::send_file_thread(std::string filename)
 
 void Client::handleTransferV2Frame(const TransferFrame& frame)
 {
+    if (frame.type == TransferFrameType::Manifest) {
+        if (m_screen->getDropTarget().empty()) {
+            const double deadline = inputleap::current_time_seconds() + 6.0;
+            while (m_screen->isFakeDraggingStarted() &&
+                   inputleap::current_time_seconds() < deadline) {
+                inputleap::this_thread_sleep(.05f);
+            }
+        }
+        if (m_screen->getDropTarget().empty()) {
+            throw std::runtime_error("drag destination was not selected");
+        }
+    }
     const auto completed =
         m_transferReceiver.handle_frame(frame, fs::u8path(m_screen->getDropTarget()));
     for (const auto& path : completed) {
         LOG_INFO("completed transfer-v2 item \"%s\"", path.u8string().c_str());
     }
     if (!completed.empty()) {
-        m_events->add_event(EventType::FILE_RECEIVE_COMPLETED, this);
+        m_events->add_event(EventType::TRANSFER_V2_RECEIVE_COMPLETED, this);
     }
 }
 

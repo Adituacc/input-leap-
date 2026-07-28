@@ -124,6 +124,13 @@ std::string& PlatformScreenLoggingWrapper::getDraggingFilename()
     return result;
 }
 
+std::vector<std::string> PlatformScreenLoggingWrapper::getDraggingPaths()
+{
+    auto result = screen_->getDraggingPaths();
+    LOG_DEBUG1("PlatformScreen::getDraggingPaths() => %zi item(s)", result.size());
+    return result;
+}
+
 void PlatformScreenLoggingWrapper::clearDraggingFilename()
 {
     LOG_DEBUG1("PlatformScreen::clearDraggingFilename()");

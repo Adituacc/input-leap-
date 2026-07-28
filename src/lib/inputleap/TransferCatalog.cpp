@@ -12,6 +12,8 @@
 #include "inputleap/DragPayload.h"
 #include "inputleap/TransferHash.h"
 
+#include <algorithm>
+#include <cctype>
 #include <set>
 #include <stdexcept>
 
@@ -61,6 +63,23 @@ void add_directory(TransferPlan& plan, const std::string& relative_path)
     plan.sources.emplace_back();
 }
 
+TransferEntryKind classify_file(const fs::path& path)
+{
+    auto extension = path.extension().u8string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (extension == ".png" || extension == ".jpg" || extension == ".jpeg" ||
+        extension == ".gif" || extension == ".bmp" || extension == ".tif" ||
+        extension == ".tiff" || extension == ".webp" || extension == ".heic") {
+        return TransferEntryKind::Image;
+    }
+    if (extension == ".url" || extension == ".webloc" || extension == ".html" ||
+        extension == ".htm") {
+        return TransferEntryKind::InternetShortcut;
+    }
+    return TransferEntryKind::File;
+}
+
 void add_path(TransferPlan& plan, const fs::path& source,
               const std::string& root_name)
 {
@@ -68,7 +87,7 @@ void add_path(TransferPlan& plan, const fs::path& source,
         throw std::invalid_argument("symbolic links cannot be transferred");
     }
     if (fs::is_regular_file(source)) {
-        add_file(plan, source, root_name, TransferEntryKind::File);
+        add_file(plan, source, root_name, classify_file(source));
         return;
     }
     if (!fs::is_directory(source)) {
@@ -93,7 +112,7 @@ void add_path(TransferPlan& plan, const fs::path& source,
             add_directory(plan, safe_relative);
         }
         else if (fs::is_regular_file(path)) {
-            add_file(plan, path, safe_relative, TransferEntryKind::File);
+            add_file(plan, path, safe_relative, classify_file(path));
         }
     }
 }

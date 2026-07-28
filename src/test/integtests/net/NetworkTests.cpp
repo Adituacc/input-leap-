@@ -223,7 +223,7 @@ TEST_F(NetworkTests, sendToClient_mockFile)
     clientArgs.m_enableCrypto = false;
     Client client(&m_events, "stub", serverAddress, clientSocketFactory, &clientScreen, clientArgs);
 
-    m_events.add_handler(EventType::FILE_RECEIVE_COMPLETED, &client,
+    m_events.add_handler(EventType::TRANSFER_V2_RECEIVE_COMPLETED, &client,
                          [this](const auto& e)
     {
         sendToClient_mockFile_file_receive_completed(e);
@@ -234,7 +234,7 @@ TEST_F(NetworkTests, sendToClient_mockFile)
     m_events.initQuitTimeout(10);
     m_events.loop();
     m_events.remove_handler(EventType::CLIENT_LISTENER_CONNECTED, &listener);
-    m_events.remove_handler(EventType::FILE_RECEIVE_COMPLETED, &client);
+    m_events.remove_handler(EventType::TRANSFER_V2_RECEIVE_COMPLETED, &client);
     m_events.cleanupQuitTimeout();
 }
 
@@ -346,7 +346,7 @@ TEST_F(NetworkTests, sendToServer_mockFile)
         sendToServer_mockFile_handle_client_connected(e, &client);
     });
 
-    m_events.add_handler(EventType::FILE_RECEIVE_COMPLETED, &server,
+    m_events.add_handler(EventType::TRANSFER_V2_RECEIVE_COMPLETED, &server,
                          [this](const auto& e)
     {
         sendToServer_mockFile_file_recieve_completed(e);
@@ -357,7 +357,7 @@ TEST_F(NetworkTests, sendToServer_mockFile)
     m_events.initQuitTimeout(10);
     m_events.loop();
     m_events.remove_handler(EventType::CLIENT_LISTENER_CONNECTED, &listener);
-    m_events.remove_handler(EventType::FILE_RECEIVE_COMPLETED, &server);
+    m_events.remove_handler(EventType::TRANSFER_V2_RECEIVE_COMPLETED, &server);
     m_events.cleanupQuitTimeout();
 }
 

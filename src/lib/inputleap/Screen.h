@@ -283,6 +283,9 @@ public:
     //! Get the filename of the file being dragged
     std::string& getDraggingFilename() const;
 
+    //! Get every local path participating in the current drag
+    std::vector<std::string> getDraggingPaths() const;
+
     //! Clear the filename of the file that was dragged
     void clearDraggingFilename();
 
