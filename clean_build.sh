@@ -12,7 +12,15 @@ if [ -z "$B_CMAKE" ]; then
 fi
 
 B_BUILD_DIR="${B_BUILD_DIR:-build}"
-B_BUILD_TYPE="${B_BUILD_TYPE:-Debug}"
+# Input Leap handles a high-frequency input stream.  An unoptimized macOS
+# client can fall behind a fast mouse and make the cursor feel badly delayed.
+# Keep Debug available via B_BUILD_TYPE=Debug, but make the normal build usable
+# as an interactive client.
+if [ "$(uname)" = "Darwin" ]; then
+    B_BUILD_TYPE="${B_BUILD_TYPE:-Release}"
+else
+    B_BUILD_TYPE="${B_BUILD_TYPE:-Debug}"
+fi
 B_CMAKE_FLAGS="-DCMAKE_BUILD_TYPE=${B_BUILD_TYPE} ${B_CMAKE_FLAGS:-}"
 
 if [ "$(uname)" = "Darwin" ]; then

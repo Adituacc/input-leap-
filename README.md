@@ -22,6 +22,17 @@ Windows package with:
 Use `-Configuration Release` for an optimized package. The staged application
 is written to `out\install\windows-<configuration>`.
 
+On macOS, the normal build now defaults to `Release` so the client can keep up
+with high-frequency pointer input:
+
+```sh
+./clean_build.sh
+```
+
+For an explicitly unoptimized developer build, use
+`B_BUILD_TYPE=Debug ./clean_build.sh`. GitHub Actions builds from `main` and
+manual workflow runs also produce optimized release installers by default.
+
 See [the performance measurement guide](doc/performance.md) to collect p50,
 p95, and p99 input-pipeline baselines without changing the network protocol.
 For a reproducible serializer microbenchmark, run:

@@ -171,7 +171,7 @@ Server::Server(
         m_events->add_handler(EventType::TRANSFER_V2_FRAME_SENDING, this,
                               [this](const auto& e) {
                                   on_transfer_frame_sending(
-                                      e.get_data_as<TransferFrame>());
+                                      e.template get_data_as<TransferFrame>());
                               });
         m_events->add_handler(EventType::FILE_RECEIVE_COMPLETED, this,
                               [this](const auto& e){ handle_file_receive_completed_event(e); });

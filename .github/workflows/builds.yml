@@ -4,9 +4,9 @@ on:
   release:
 
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -15,10 +15,13 @@ on:
         description: 'Build Release binaries'
         required: false
         type: boolean
+        default: true
 
 # Set the build type here
 env:
-  B_BUILD_TYPE: ${{ (inputs.build_release || github.event_name == 'release') && 'Release' || 'Debug' }}
+  # Artifacts produced from main and manual runs are installed by users, so
+  # they must be optimized. Pull requests remain Debug builds with full tests.
+  B_BUILD_TYPE: ${{ (inputs.build_release || github.event_name == 'release' || github.event_name == 'push') && 'Release' || 'Debug' }}
   DEBIAN_FRONTEND: noninteractive
 
 jobs:
