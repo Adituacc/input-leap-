@@ -30,6 +30,7 @@ if(INPUTLEAP_BUILD_TESTS)
     include(../cmake/gtest.cmake)
     add_subdirectory(test/integtests)
     add_subdirectory(test/unittests)
+    add_subdirectory(test/benchmarks)
 endif()
 
 if(INPUTLEAP_BUILD_GUI)

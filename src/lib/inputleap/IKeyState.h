@@ -22,6 +22,7 @@
 #include "base/Event.h"
 #include "base/IEventQueue.h"
 #include "base/EventTypes.h"
+#include "base/PerformanceMetrics.h"
 #include <set>
 
 namespace inputleap {
@@ -71,6 +72,7 @@ public:
         KeyButton m_button = 0;
         std::int32_t m_count = 0;
         std::string screens_;
+        std::uint64_t m_captureTimeUs = performance_timestamp_us();
     };
 
     typedef std::set<KeyButton> KeyButtonSet;

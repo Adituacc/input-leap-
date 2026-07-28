@@ -565,7 +565,7 @@ Double click on a screen to edit its settings.</string>
           <item row="5" column="0">
            <widget class="QCheckBox" name="m_pCheckBoxEnableDragAndDrop">
             <property name="text">
-             <string>Enable drag and drop file transfers</string>
+             <string>Enable drag and drop for files, images, and links</string>
             </property>
            </widget>
           </item>

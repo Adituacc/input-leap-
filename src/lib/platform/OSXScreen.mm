@@ -852,7 +852,7 @@ OSXScreen::leave()
 
 				// TODO: what to do with multiple file or even
 				// a folder
-				client->sendFileToServer(fileList.c_str());
+				client->sendFileToServer(fileList);
 			}
 		}
 		m_draggingStarted = false;
@@ -1995,17 +1995,13 @@ OSXScreen::fakeDraggingFiles(DragFileList fileList)
 std::string& OSXScreen::getDraggingFilename()
 {
 	if (m_draggingStarted) {
-		CFStringRef dragInfo = getDraggedFileURL();
-        char* info = nullptr;
-		info = CFStringRefToUTF8String(dragInfo);
-        if (info == nullptr) {
+        auto drag_path = getDraggedFilePath();
+        if (drag_path.empty()) {
 			m_draggingFilename.clear();
 		}
 		else {
-			LOG_DEBUG("drag info: %s", info);
-			CFRelease(dragInfo);
-            std::string fileList = info;
-			m_draggingFilename = fileList;
+            LOG_DEBUG("drag payload path: %s", drag_path.c_str());
+            m_draggingFilename = drag_path;
 		}
 
 		// fake a escape key down and up then left mouse button up

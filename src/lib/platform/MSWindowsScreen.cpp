@@ -36,6 +36,7 @@
 #include "arch/win32/ArchMiscWindows.h"
 #include "arch/Arch.h"
 #include "base/Log.h"
+#include "base/PerformanceMetrics.h"
 #include "base/IEventQueue.h"
 #include "base/EventQueueTimer.h"
 #include "base/Time.h"
@@ -375,7 +376,7 @@ void MSWindowsScreen::send_drag_thread()
         LOG_DEBUG("send dragging info to server: %s", draggingFilename.c_str());
         client->sendDragInfo(fileCount, draggingFilename, size);
         LOG_DEBUG("send dragging file to server");
-        client->sendFileToServer(draggingFilename.c_str());
+        client->sendFileToServer(draggingFilename);
     }
 
     m_draggingStarted = false;
@@ -1071,6 +1072,8 @@ bool MSWindowsScreen::onMark(std::uint32_t mark)
 bool
 MSWindowsScreen::onKey(WPARAM wParam, LPARAM lParam)
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_CAPTURE};
+
     static const KeyModifierMask s_ctrlAlt =
         KeyModifierControl | KeyModifierAlt;
 
@@ -1246,6 +1249,8 @@ MSWindowsScreen::onHotKey(WPARAM wParam, LPARAM lParam)
 bool
 MSWindowsScreen::onMouseButton(WPARAM wParam, LPARAM lParam)
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_CAPTURE};
+
     // get which button
     bool pressed    = mapPressFromEvent(wParam, lParam);
     ButtonID button = mapButtonFromEvent(wParam, lParam);
@@ -1299,6 +1304,8 @@ MSWindowsScreen::onMouseButton(WPARAM wParam, LPARAM lParam)
 //   5. sends the delta movement to the client (could be +1,+1 or -1,+4 for example)
 bool MSWindowsScreen::onMouseMove(std::int32_t mx, std::int32_t my)
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_CAPTURE};
+
     // compute motion delta (relative to the last known
     // mouse position)
     std::int32_t x = mx - m_xCursor;
@@ -1361,6 +1368,8 @@ bool MSWindowsScreen::onMouseMove(std::int32_t mx, std::int32_t my)
 
 bool MSWindowsScreen::onMouseWheel(std::int32_t xDelta, std::int32_t yDelta)
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_CAPTURE};
+
     // ignore message if posted prior to last mark change
     if (!ignore()) {
         LOG_DEBUG1("event: button wheel delta=%+d,%+d", xDelta, yDelta);

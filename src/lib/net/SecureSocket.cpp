@@ -24,10 +24,10 @@
 #include "base/Log.h"
 #include "base/String.h"
 #include "base/finally.h"
-#include "base/Time.h"
 #include "common/DataDirectories.h"
 #include "io/filesystem.h"
 #include "net/FingerprintDatabase.h"
+#include "net/XSocket.h"
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -42,7 +42,6 @@ namespace inputleap {
 #define MAX_ERROR_SIZE 65535
 
 static const std::size_t MAX_INPUT_BUFFER_SIZE = 1024 * 1024;
-static const float s_retryDelay = 0.01f;
 
 enum {
     kMsgSize = 128
@@ -59,7 +58,8 @@ SecureSocket::SecureSocket(IEventQueue* events, SocketMultiplexer* socketMultipl
     TCPSocket(events, socketMultiplexer, family),
     m_secureReady(false),
     m_fatal(false),
-    security_level_{security_level}
+    security_level_{security_level},
+    tls_retry_direction_{TlsRetryDirection::READ_WRITE}
 {
 }
 
@@ -68,7 +68,8 @@ SecureSocket::SecureSocket(IEventQueue* events, SocketMultiplexer* socketMultipl
     TCPSocket(events, socketMultiplexer, socket),
     m_secureReady(false),
     m_fatal(false),
-    security_level_{security_level}
+    security_level_{security_level},
+    tls_retry_direction_{TlsRetryDirection::READ_WRITE}
 {
 }
 
@@ -131,7 +132,8 @@ SecureSocket::secureConnect()
 {
     setJob(std::make_unique<TSocketMultiplexerMethodJob>([this](auto j, auto r, auto w, auto e)
                                                          { return serviceConnect(j, r, w, e); },
-                                                         getSocket(), isReadable(), isWritable()));
+                                                         getSocket(), retryWantsRead(),
+                                                         retryWantsWrite()));
 }
 
 void
@@ -139,7 +141,8 @@ SecureSocket::secureAccept()
 {
     setJob(std::make_unique<TSocketMultiplexerMethodJob>([this](auto j, auto r, auto w, auto e)
                                                          { return serviceAccept(j, r, w, e); },
-                                                         getSocket(), isReadable(), isWritable()));
+                                                         getSocket(), retryWantsRead(),
+                                                         retryWantsWrite()));
 }
 
 TCPSocket::EJobResult
@@ -365,8 +368,6 @@ SecureSocket::initContext(bool server)
 
     SSL_library_init();
 
-    const SSL_METHOD* method;
-
     // load & register all cryptos, etc.
     OpenSSL_add_all_algorithms();
 
@@ -377,23 +378,16 @@ SecureSocket::initContext(bool server)
         showSecureLibInfo();
     }
 
-    // SSLv23_method uses TLSv1, with the ability to fall back to SSLv3
-    if (server) {
-        method = SSLv23_server_method();
-    }
-    else {
-        method = SSLv23_client_method();
-    }
-
-    // create new context from method
-    SSL_METHOD* m = const_cast<SSL_METHOD*>(method);
-    m_ssl->m_context = SSL_CTX_new(m);
-
-    // drop SSLv3 support
-    SSL_CTX_set_options(m_ssl->m_context, SSL_OP_NO_SSLv3);
-
+    const SSL_METHOD* method = server ? TLS_server_method() : TLS_client_method();
+    m_ssl->m_context = SSL_CTX_new(method);
     if (m_ssl->m_context == nullptr) {
-        showError("");
+        showError("could not create TLS context");
+        throw XSocketCreate("could not create TLS context");
+    }
+
+    if (!configure_tls_context(m_ssl->m_context)) {
+        showError("could not apply secure TLS policy");
+        throw XSocketCreate("could not apply secure TLS policy");
     }
 
     if (security_level_ == ConnectionSecurityLevel::ENCRYPTED_AUTHENTICATED) {
@@ -434,11 +428,9 @@ SecureSocket::secureAccept(int socket)
     checkResult(r, secure_accept_retry_);
 
     if (isFatal()) {
-        // tell user and sleep so the socket isn't hammered.
         LOG_ERR("failed to accept secure socket");
         LOG_INFO("client connection may not be secure");
         m_secureReady = false;
-        inputleap::this_thread_sleep(1);
         secure_accept_retry_ = 0;
         return -1; // Failed, error out
     }
@@ -471,7 +463,6 @@ SecureSocket::secureAccept(int socket)
     if (secure_accept_retry_ > 0) {
         LOG_DEBUG2("retry accepting secure socket");
         m_secureReady = false;
-        inputleap::this_thread_sleep(s_retryDelay);
         return 0;
     }
 
@@ -512,7 +503,6 @@ SecureSocket::secureConnect(int socket)
     if (secure_connect_retry_ > 0) {
         LOG_DEBUG2("retry connect secure socket");
         m_secureReady = false;
-        inputleap::this_thread_sleep(s_retryDelay);
         return 0;
     }
 
@@ -544,6 +534,7 @@ SecureSocket::checkResult(int status, int& retry)
     // should result in a retry.
 
     int errorCode = SSL_get_error(m_ssl->m_ssl, status);
+    tls_retry_direction_ = tls_retry_direction(errorCode);
 
     switch (errorCode) {
     case SSL_ERROR_NONE:
@@ -563,10 +554,6 @@ SecureSocket::checkResult(int status, int& retry)
         break;
 
     case SSL_ERROR_WANT_WRITE:
-        // Need to make sure the socket is known to be writable so the impending
-        // select action actually triggers on a write. This isn't necessary for
-        // m_readable because the socket logic is always readable
-        m_writable = true;
         retry++;
         LOG_DEBUG2("want to write, error=%d, attempt=%d", errorCode, retry);
         break;
@@ -741,7 +728,8 @@ MultiplexerJobStatus SecureSocket::serviceConnect(ISocketMultiplexerJob* job,
         true,
         std::make_unique<TSocketMultiplexerMethodJob>([this](auto j, auto r, auto w, auto e)
                                                       { return serviceConnect(j, r, w, e); },
-                                                      getSocket(), isReadable(), isWritable())
+                                                       getSocket(), retryWantsRead(),
+                                                       retryWantsWrite())
     };
 }
 
@@ -777,8 +765,21 @@ MultiplexerJobStatus SecureSocket::serviceAccept(ISocketMultiplexerJob* job,
         true,
         std::make_unique<TSocketMultiplexerMethodJob>([this](auto j, auto r, auto w, auto e)
                                                       { return serviceAccept(j, r, w, e); },
-                                                      getSocket(), isReadable(), isWritable())
+                                                       getSocket(), retryWantsRead(),
+                                                       retryWantsWrite())
     };
+}
+
+bool SecureSocket::retryWantsRead() const
+{
+    return tls_retry_direction_ == TlsRetryDirection::READ ||
+           tls_retry_direction_ == TlsRetryDirection::READ_WRITE;
+}
+
+bool SecureSocket::retryWantsWrite() const
+{
+    return tls_retry_direction_ == TlsRetryDirection::WRITE ||
+           tls_retry_direction_ == TlsRetryDirection::READ_WRITE;
 }
 
 void

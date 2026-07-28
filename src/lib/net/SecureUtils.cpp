@@ -49,6 +49,7 @@
 #include "io/filesystem.h"
 
 #include <openssl/evp.h>
+#include <openssl/ssl.h>
 #include <openssl/x509.h>
 #include <openssl/x509v3.h>
 #include <openssl/pem.h>
@@ -60,6 +61,14 @@
 namespace inputleap {
 
 namespace {
+
+constexpr char kTls12CipherList[] =
+    "ECDHE-ECDSA-CHACHA20-POLY1305:"
+    "ECDHE-RSA-CHACHA20-POLY1305:"
+    "ECDHE-ECDSA-AES256-GCM-SHA384:"
+    "ECDHE-RSA-AES256-GCM-SHA384:"
+    "ECDHE-ECDSA-AES128-GCM-SHA256:"
+    "ECDHE-RSA-AES128-GCM-SHA256";
 
 const EVP_MD* get_digest_for_type(FingerprintType type)
 {
@@ -73,6 +82,38 @@ const EVP_MD* get_digest_for_type(FingerprintType type)
 }
 
 } // namespace
+
+TlsRetryDirection tls_retry_direction(int ssl_error)
+{
+    switch (ssl_error) {
+    case SSL_ERROR_WANT_READ:
+        return TlsRetryDirection::READ;
+    case SSL_ERROR_WANT_WRITE:
+        return TlsRetryDirection::WRITE;
+    case SSL_ERROR_WANT_CONNECT:
+    case SSL_ERROR_WANT_ACCEPT:
+        return TlsRetryDirection::READ_WRITE;
+    default:
+        return TlsRetryDirection::NONE;
+    }
+}
+
+bool configure_tls_context(SSL_CTX* context)
+{
+    if (context == nullptr) {
+        return false;
+    }
+
+    if (SSL_CTX_set_min_proto_version(context, TLS1_2_VERSION) != 1) {
+        return false;
+    }
+    if (SSL_CTX_set_cipher_list(context, kTls12CipherList) != 1) {
+        return false;
+    }
+
+    SSL_CTX_set_options(context, SSL_OP_NO_COMPRESSION | SSL_OP_NO_RENEGOTIATION);
+    return true;
+}
 
 std::string format_ssl_fingerprint(const std::vector<uint8_t>& fingerprint, bool separator)
 {

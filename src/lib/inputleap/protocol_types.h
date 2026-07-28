@@ -33,9 +33,12 @@ namespace inputleap {
 // 1.4:  adds crypto support
 // 1.5:  adds file transfer and removes home brew crypto
 // 1.6:  adds clipboard streaming
+// 1.7:  negotiates transfer-v2 capability
 // NOTE: with new version, InputLeap minor version should increment
 static const std::int16_t kProtocolMajorVersion = 1;
-static const std::int16_t kProtocolMinorVersion = 6;
+static const std::int16_t kProtocolMinorVersion = 7;
+static const std::int16_t kProtocolMinimumMajorVersion = 1;
+static const std::int16_t kProtocolMinimumMinorVersion = 6;
 
 // default contact port number
 static const std::uint16_t kDefaultPort = 24800;
@@ -276,6 +279,7 @@ extern const char*        kMsgDSetOptions;
 // 1 means the content followed is the chunk data.
 // 2 means the file transfer is finished.
 extern const char*        kMsgDFileTransfer;
+extern const char*        kMsgDTransferV2;
 
 // drag information:  primary <-> secondary
 // transfer drag information. The first 2 bytes are used for storing

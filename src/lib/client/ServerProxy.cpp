@@ -22,6 +22,7 @@
 #include "inputleap/FileChunk.h"
 #include "inputleap/ClipboardChunk.h"
 #include "inputleap/StreamChunker.h"
+#include "inputleap/TransferFrame.h"
 #include "inputleap/Clipboard.h"
 #include "inputleap/ProtocolUtil.h"
 #include "inputleap/option_types.h"
@@ -29,6 +30,7 @@
 #include "inputleap/Exceptions.h"
 #include "io/IStream.h"
 #include "base/Log.h"
+#include "base/PerformanceMetrics.h"
 #include "base/IEventQueue.h"
 #include "base/EventQueueTimer.h"
 #include "base/XBase.h"
@@ -301,6 +303,12 @@ ServerProxy::EResult ServerProxy::parseMessage(const std::uint8_t* code)
 
     else if (memcmp(code, kMsgDFileTransfer, 4) == 0) {
         fileChunkReceived();
+    }
+    else if (memcmp(code, kMsgDTransferV2, 4) == 0) {
+        if (!m_client->supportsTransferV2()) {
+            return kDisconnect;
+        }
+        transferFrameReceived();
     }
     else if (memcmp(code, kMsgDDragInfo, 4) == 0) {
         dragInfoReceived();
@@ -595,6 +603,8 @@ ServerProxy::grabClipboard()
 void
 ServerProxy::keyDown()
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::CLIENT_PROTOCOL};
+
     // get mouse up to date
     flushCompressedMouse();
 
@@ -618,6 +628,8 @@ ServerProxy::keyDown()
 void
 ServerProxy::keyRepeat()
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::CLIENT_PROTOCOL};
+
     // get mouse up to date
     flushCompressedMouse();
 
@@ -642,6 +654,8 @@ ServerProxy::keyRepeat()
 void
 ServerProxy::keyUp()
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::CLIENT_PROTOCOL};
+
     // get mouse up to date
     flushCompressedMouse();
 
@@ -665,6 +679,8 @@ ServerProxy::keyUp()
 void
 ServerProxy::mouseDown()
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::CLIENT_PROTOCOL};
+
     // get mouse up to date
     flushCompressedMouse();
 
@@ -680,6 +696,8 @@ ServerProxy::mouseDown()
 void
 ServerProxy::mouseUp()
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::CLIENT_PROTOCOL};
+
     // get mouse up to date
     flushCompressedMouse();
 
@@ -695,6 +713,8 @@ ServerProxy::mouseUp()
 void
 ServerProxy::mouseMove()
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::CLIENT_PROTOCOL};
+
     // parse
     bool ignore;
     std::int16_t x, y;
@@ -728,6 +748,8 @@ ServerProxy::mouseMove()
 void
 ServerProxy::mouseRelativeMove()
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::CLIENT_PROTOCOL};
+
     // parse
     bool ignore;
     std::int16_t dx, dy;
@@ -758,6 +780,8 @@ ServerProxy::mouseRelativeMove()
 void
 ServerProxy::mouseWheel()
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::CLIENT_PROTOCOL};
+
     // get mouse up to date
     flushCompressedMouse();
 
@@ -864,7 +888,7 @@ ServerProxy::infoAcknowledgment()
 void
 ServerProxy::fileChunkReceived()
 {
-    int result = FileChunk::assemble(
+    int result = m_file_chunk_assembler.assemble(
                     m_stream,
                     m_client->getReceivedFileData(),
                     m_client->getExpectedFileSize());
@@ -901,6 +925,29 @@ void ServerProxy::handle_clipboard_sending_event(const Event& event)
 void ServerProxy::file_chunk_sending(const FileChunk& chunk)
 {
     ProtocolUtil::writef(m_stream, kMsgDFileTransfer, chunk.mark_, &chunk.data_);
+}
+
+void ServerProxy::transfer_frame_sending(const TransferFrame& frame)
+{
+    if (!m_client->supportsTransferV2()) {
+        throw std::runtime_error("server does not support transfer-v2");
+    }
+    std::string wire = frame.serialize();
+    ProtocolUtil::writef(m_stream, kMsgDTransferV2, &wire);
+}
+
+void ServerProxy::transferFrameReceived()
+{
+    std::string wire;
+    if (!ProtocolUtil::readf(m_stream, kMsgDTransferV2 + 4, &wire)) {
+        throw XBadClient("invalid transfer-v2 frame");
+    }
+    TransferFrame frame;
+    std::string error;
+    if (!TransferFrame::deserialize(wire, frame, &error)) {
+        throw XBadClient(error);
+    }
+    m_client->handleTransferV2Frame(frame);
 }
 
 void ServerProxy::sendDragInfo(std::uint32_t fileCount, const char* info, size_t size)

@@ -19,10 +19,13 @@
 
 #include "common/common.h"
 
-#import <CoreFoundation/CoreFoundation.h>
+#include <string>
 
 namespace inputleap {
 
-CFStringRef getDraggedFileURL();
+// Returns a local file path suitable for the existing drag transfer protocol.
+// Native files are returned directly. Image and URL pasteboard payloads are
+// materialized into a temporary file first.
+std::string getDraggedFilePath();
 
 } // namespace inputleap

@@ -24,23 +24,31 @@
 #include "base/Event.h"
 #include "base/IEventQueue.h"
 #include "base/EventTypes.h"
+#include "base/finally.h"
 #include "base/Log.h"
 #include "base/String.h"
 
+#include <algorithm>
 #include <fstream>
 #include <stdexcept>
+#include <vector>
 
 namespace inputleap {
 
 static const size_t g_chunkSize = 32 * 1024; //32kb
 
-bool StreamChunker::s_isChunkingFile = false;
-bool StreamChunker::s_interruptFile = false;
+std::atomic_bool StreamChunker::s_isChunkingFile{false};
+std::atomic_bool StreamChunker::s_interruptFile{false};
 
 void StreamChunker::sendFile(const char* filename, IEventQueue* events,
                              const EventTarget* event_target)
 {
-    s_isChunkingFile = true;
+    s_interruptFile.store(false);
+    s_isChunkingFile.store(true);
+    auto reset_chunking = finally([]() {
+        StreamChunker::s_isChunkingFile.store(false);
+        StreamChunker::s_interruptFile.store(false);
+    });
 
     std::fstream file(filename, std::ios::in | std::ios::binary);
 
@@ -51,6 +59,9 @@ void StreamChunker::sendFile(const char* filename, IEventQueue* events,
     // check file size
     file.seekg (0, std::ios::end);
     size_t size = static_cast<size_t>(file.tellg());
+    if (size > FileChunk::kMaxFileSize) {
+        throw std::runtime_error("file exceeds maximum drag transfer size");
+    }
 
     // send first message (file size)
     auto size_message = FileChunk::start(size);
@@ -60,38 +71,29 @@ void StreamChunker::sendFile(const char* filename, IEventQueue* events,
 
     // send chunk messages with a fixed chunk size
     size_t sentLength = 0;
-    size_t chunkSize = g_chunkSize;
     file.seekg (0, std::ios::beg);
 
-    while (true) {
-        if (s_interruptFile) {
-            s_interruptFile = false;
+    while (sentLength < size) {
+        if (s_interruptFile.load()) {
             LOG_DEBUG("file transmission interrupted");
             break;
         }
 
         events->add_event(EventType::FILE_KEEPALIVE, event_target);
 
-        // make sure we don't read too much from the mock data.
-        if (sentLength + chunkSize > size) {
-            chunkSize = size - sentLength;
+        const auto chunkSize = (std::min)(g_chunkSize, size - sentLength);
+        std::vector<std::uint8_t> chunkData(chunkSize);
+        file.read(reinterpret_cast<char*>(chunkData.data()),
+                  static_cast<std::streamsize>(chunkSize));
+        if (static_cast<std::size_t>(file.gcount()) != chunkSize) {
+            throw std::runtime_error("failed while reading file");
         }
-
-        char* chunkData = new char[chunkSize];
-        file.read(chunkData, chunkSize);
-        std::uint8_t* data = reinterpret_cast<std::uint8_t*>(chunkData);
-        FileChunk fileChunk = FileChunk::data(data, chunkSize);
-        delete[] chunkData;
+        FileChunk fileChunk = FileChunk::data(chunkData.data(), chunkSize);
 
         events->add_event(EventType::FILE_CHUNK_SENDING, event_target,
                           create_event_data<FileChunk>(fileChunk));
 
         sentLength += chunkSize;
-        file.seekg (sentLength, std::ios::beg);
-
-        if (sentLength == size) {
-            break;
-        }
     }
 
     // send last message
@@ -102,7 +104,6 @@ void StreamChunker::sendFile(const char* filename, IEventQueue* events,
 
     file.close();
 
-    s_isChunkingFile = false;
 }
 
 void StreamChunker::sendClipboard(std::string& data, std::size_t size, ClipboardID id,
@@ -151,8 +152,8 @@ void StreamChunker::sendClipboard(std::string& data, std::size_t size, Clipboard
 void
 StreamChunker::interruptFile()
 {
-    if (s_isChunkingFile) {
-        s_interruptFile = true;
+    if (s_isChunkingFile.load()) {
+        s_interruptFile.store(true);
         LOG_INFO("previous dragged file has become invalid");
     }
 }

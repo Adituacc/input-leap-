@@ -27,6 +27,9 @@
 #include "inputleap/protocol_types.h"
 #include "inputleap/Exceptions.h"
 #include "inputleap/StreamChunker.h"
+#include "inputleap/TransferCatalog.h"
+#include "inputleap/TransferFrame.h"
+#include "inputleap/TransferSender.h"
 #include "inputleap/IPlatformScreen.h"
 #include "mt/Thread.h"
 #include "net/TCPSocket.h"
@@ -41,6 +44,7 @@
 
 
 #include <climits>
+#include <algorithm>
 #include <cstring>
 #include <cstdlib>
 #include <sstream>
@@ -67,7 +71,9 @@ Client::Client(IEventQueue* events, const std::string& name, const NetworkAddres
     m_connectOnResume(false),
     m_events(events),
     m_sendFileThread(nullptr),
+    m_protocolMinorVersion(kProtocolMinimumMinorVersion),
     m_writeToDropDirThread(nullptr),
+    m_transferReceiver(&m_transferReceiveProgress),
     m_useSecureNetwork(args.m_enableCrypto),
     m_args(args),
     m_enableClipboard(true),
@@ -85,6 +91,10 @@ Client::Client(IEventQueue* events, const std::string& name, const NetworkAddres
     if (m_args.m_enableDragDrop) {
         m_events->add_handler(EventType::FILE_CHUNK_SENDING, this,
                               [this](const auto& e){ handle_file_chunk_sending(e); });
+        m_events->add_handler(EventType::TRANSFER_V2_FRAME_SENDING, this,
+                              [this](const auto& e) {
+                                  handle_transfer_frame_sending(e);
+                              });
         m_events->add_handler(EventType::FILE_RECEIVE_COMPLETED, this,
                               [this](const auto& e){ handle_file_receive_completed(e); });
     }
@@ -233,6 +243,7 @@ void Client::enter(std::int32_t xAbs, std::int32_t yAbs, std::uint32_t, KeyModif
     m_screen->enter(mask);
 
     if (m_sendFileThread != nullptr) {
+        m_transferSendProgress.cancel();
         StreamChunker::interruptFile();
         m_sendFileThread = nullptr;
     }
@@ -644,19 +655,22 @@ void Client::handle_hello()
 
     // check versions
     LOG_DEBUG1("got hello version %d.%d", major, minor);
-    if (major < kProtocolMajorVersion ||
-        (major == kProtocolMajorVersion && minor < kProtocolMinorVersion)) {
+    if (major != kProtocolMinimumMajorVersion ||
+        minor < kProtocolMinimumMinorVersion) {
         sendConnectionFailedEvent(XIncompatibleClient(major, minor).what());
         cleanupTimer();
         cleanupConnection();
         return;
     }
 
+    m_protocolMinorVersion = (std::min)(minor, kProtocolMinorVersion);
+
     // say hello back
-    LOG_DEBUG1("say hello version %d.%d", kProtocolMajorVersion, kProtocolMinorVersion);
+    LOG_DEBUG1("say hello version %d.%d", kProtocolMajorVersion,
+               m_protocolMinorVersion);
     ProtocolUtil::writef(m_stream, kMsgHelloBack,
                             kProtocolMajorVersion,
-                            kProtocolMinorVersion, &m_name);
+                            m_protocolMinorVersion, &m_name);
 
     // now connected but waiting to complete handshake
     setupScreen();
@@ -746,25 +760,55 @@ Client::isReceivedFileSizeValid()
 }
 
 void
-Client::sendFileToServer(const char* filename)
+Client::sendFileToServer(const std::string& filename)
 {
     if (m_sendFileThread != nullptr) {
+        m_transferSendProgress.cancel();
         StreamChunker::interruptFile();
     }
 
     m_sendFileThread = new Thread([this, filename]() { send_file_thread(filename); });
 }
 
-void Client::send_file_thread(const char* filename)
+void Client::handle_transfer_frame_sending(const Event& event)
+{
+    m_server->transfer_frame_sending(
+        event.get_data_as<TransferFrame>());
+}
+
+void Client::send_file_thread(std::string filename)
 {
     try {
-        StreamChunker::sendFile(filename, m_events, this);
+        if (supportsTransferV2()) {
+            auto plan = TransferCatalog::plan_from_paths({fs::u8path(filename)});
+            TransferSender sender(&m_transferSendProgress);
+            sender.send(plan, [this](const TransferFrame& frame) {
+                m_events->add_event(
+                    EventType::TRANSFER_V2_FRAME_SENDING, this,
+                    create_event_data<TransferFrame>(frame));
+            });
+        }
+        else {
+            StreamChunker::sendFile(filename.c_str(), m_events, this);
+        }
     }
     catch (std::runtime_error& error) {
         LOG_ERR("failed sending file chunks: %s", error.what());
     }
 
     m_sendFileThread = nullptr;
+}
+
+void Client::handleTransferV2Frame(const TransferFrame& frame)
+{
+    const auto completed =
+        m_transferReceiver.handle_frame(frame, fs::u8path(m_screen->getDropTarget()));
+    for (const auto& path : completed) {
+        LOG_INFO("completed transfer-v2 item \"%s\"", path.u8string().c_str());
+    }
+    if (!completed.empty()) {
+        m_events->add_event(EventType::FILE_RECEIVE_COMPLETED, this);
+    }
 }
 
 void Client::sendDragInfo(std::uint32_t fileCount, std::string& info, size_t size)

@@ -127,6 +127,13 @@ TEST(StringTests, stringToUint_inputString_outputInt)
     EXPECT_EQ(123u, value);
 }
 
+TEST(StringTests, stringToSizeType_invalidInput_returnsZero)
+{
+    EXPECT_EQ(0u, string::stringToSizeType("not-a-size"));
+    EXPECT_EQ(0u, string::stringToSizeType("12 trailing"));
+    EXPECT_EQ(0u, string::stringToSizeType(""));
+}
+
 TEST(StringTests, splitString_twoSeparator_returnThreeParts)
 {
     std::string string = "stub1:stub2:stub3";

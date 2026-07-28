@@ -22,6 +22,7 @@
 #include "inputleap/mouse_types.h"
 #include "base/Event.h"
 #include "base/EventTypes.h"
+#include "base/PerformanceMetrics.h"
 
 namespace inputleap {
 
@@ -47,6 +48,7 @@ public:
     public:
         ButtonID m_button;
         KeyModifierMask m_mask;
+        std::uint64_t m_captureTimeUs = performance_timestamp_us();
     };
     //! Motion event data
     class MotionInfo {
@@ -59,6 +61,7 @@ public:
     public:
         std::int32_t m_x;
         std::int32_t m_y;
+        std::uint64_t m_captureTimeUs = performance_timestamp_us();
     };
     //! Wheel motion event data
     class WheelInfo {
@@ -71,6 +74,7 @@ public:
     public:
         std::int32_t m_xDelta;
         std::int32_t m_yDelta;
+        std::uint64_t m_captureTimeUs = performance_timestamp_us();
     };
     //! Hot key event data
     class HotKeyInfo {

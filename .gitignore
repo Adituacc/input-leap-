@@ -35,6 +35,8 @@ CMakeLists.txt.user
 .vscode/
 # Transient in-project-directory dependencies
 /deps/
+/.deps/
+/aqtinstall.log
 /out/build/x64-Debug
 bundle
 compile_commands.json

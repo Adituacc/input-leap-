@@ -29,6 +29,7 @@ PacketStreamFilter::PacketStreamFilter(IEventQueue* events, std::unique_ptr<IStr
     StreamFilter(events, std::move(stream)),
     m_size(0),
     m_inputShutdown(false),
+    m_inputFormatError(false),
     m_events(events)
 {
     // do nothing
@@ -139,7 +140,10 @@ bool PacketStreamFilter::readPacketSize()
                  (static_cast<std::uint32_t>(buffer[2]) <<  8) |
                   static_cast<std::uint32_t>(buffer[3]);
 
-        if (m_size > PROTOCOL_MAX_MESSAGE_LENGTH) {
+        if (m_size == 0 || m_size > PROTOCOL_MAX_MESSAGE_LENGTH) {
+            m_inputFormatError = true;
+            m_size = 0;
+            m_buffer.pop(m_buffer.getSize());
             m_events->add_event(EventType::STREAM_INPUT_FORMAT_ERROR, get_event_target());
             return false;
         }
@@ -150,6 +154,10 @@ bool PacketStreamFilter::readPacketSize()
 bool
 PacketStreamFilter::readMore()
 {
+    if (m_inputFormatError) {
+        return false;
+    }
+
     // note if we have whole packet
     bool wasReady = isReadyNoLock();
 
@@ -182,6 +190,9 @@ PacketStreamFilter::filterEvent(const Event& event)
 {
     if (event.getType() == EventType::STREAM_INPUT_READY) {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (m_inputFormatError) {
+            return;
+        }
         if (!readMore()) {
             return;
         }

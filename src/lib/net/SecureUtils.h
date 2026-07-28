@@ -25,6 +25,17 @@
 
 namespace inputleap {
 
+enum class TlsRetryDirection {
+    NONE,
+    READ,
+    WRITE,
+    READ_WRITE
+};
+
+// Converts an SSL_get_error() result into the socket readiness that must be
+// observed before retrying the operation.
+TlsRetryDirection tls_retry_direction(int ssl_error);
+
 std::string format_ssl_fingerprint(const std::vector<std::uint8_t>& fingerprint,
                                    bool separator = true);
 std::string format_ssl_fingerprint_columns(const std::vector<uint8_t>& fingerprint);
@@ -32,6 +43,9 @@ std::string format_ssl_fingerprint_columns(const std::vector<uint8_t>& fingerpri
 FingerprintData get_ssl_cert_fingerprint(X509* cert, FingerprintType type);
 
 FingerprintData get_pem_file_cert_fingerprint(const std::string& path, FingerprintType type);
+
+// Applies the shared TLS policy to a newly created SSL context.
+bool configure_tls_context(SSL_CTX* context);
 
 void generate_pem_self_signed_cert(const std::string& path);
 

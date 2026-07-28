@@ -277,6 +277,9 @@ enum class EventType : std::uint32_t {
     /// This event is sent whenever a file chunk is transferred.
     FILE_CHUNK_SENDING,
 
+    /// This event carries a versioned, resumable transfer frame.
+    TRANSFER_V2_FRAME_SENDING,
+
     /// This event is sent whenever file has been received.
     FILE_RECEIVE_COMPLETED,
 

@@ -22,8 +22,10 @@
 #include "inputleap/protocol_types.h"
 #include "inputleap/Exceptions.h"
 
+#include <array>
 #include <cctype>
 #include <cstring>
+#include <memory>
 #include <vector>
 
 namespace inputleap {
@@ -76,21 +78,20 @@ void ProtocolUtil::vwritef(inputleap::IStream* stream, const char* fmt, std::uin
         return;
     }
 
-    // fill buffer
-    std::uint8_t* buffer = new std::uint8_t[size];
+    // Input events are small and extremely frequent. Keep their serialization
+    // off the heap while retaining dynamic storage for clipboard/file payloads.
+    constexpr std::size_t kLocalBufferSize = 256;
+    std::array<std::uint8_t, kLocalBufferSize> local_buffer;
+    std::unique_ptr<std::uint8_t[]> dynamic_buffer;
+    std::uint8_t* buffer = local_buffer.data();
+    if (size > local_buffer.size()) {
+        dynamic_buffer.reset(new std::uint8_t[size]);
+        buffer = dynamic_buffer.get();
+    }
     writef_void(buffer, fmt, args);
 
-    try {
-        // write buffer
-        stream->write(buffer, size);
-        LOG_DEBUG5("wrote %d bytes", size);
-
-        delete[] buffer;
-    }
-    catch (XBase&) {
-        delete[] buffer;
-        throw;
-    }
+    stream->write(buffer, size);
+    LOG_DEBUG5("wrote %d bytes", size);
 }
 
 void
@@ -330,7 +331,6 @@ std::uint32_t ProtocolUtil::getLength(const char* fmt, va_list args)
             case 's':
                 assert(len == 0);
                 len = 4 + static_cast<std::uint32_t>((va_arg(args, std::string*))->size());
-                (void)va_arg(args, std::uint8_t*);
                 break;
 
             case 'S':

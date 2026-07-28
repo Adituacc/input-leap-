@@ -21,6 +21,8 @@
 #include "base/Fwd.h"
 #include "base/EventTarget.h"
 #include "inputleap/Fwd.h"
+#include "inputleap/TransferProgress.h"
+#include "inputleap/TransferReceiver.h"
 #include "inputleap/IClient.h"
 #include "inputleap/Clipboard.h"
 #include "inputleap/DragInformation.h"
@@ -84,7 +86,7 @@ public:
     void dragInfoReceived(std::uint32_t fileNum, std::string data);
 
     //! Create a new thread and use it to send file to Server
-    void sendFileToServer(const char* filename);
+    void sendFileToServer(const std::string& filename);
 
     //! Send dragging file information back to server
     void sendDragInfo(std::uint32_t fileCount, std::string& info, size_t size);
@@ -125,6 +127,9 @@ public:
 
     //! Return drag file list
     DragFileList getDragFileList() { return m_dragFileList; }
+    std::int16_t getProtocolMinorVersion() const { return m_protocolMinorVersion; }
+    bool supportsTransferV2() const { return m_protocolMinorVersion >= 7; }
+    void handleTransferV2Frame(const TransferFrame& frame);
 
     //@}
 
@@ -160,7 +165,7 @@ private:
     void send_event(EventType);
     void sendConnectionFailedEvent(const char* msg);
     void send_file_chunk(const FileChunk& data);
-    void send_file_thread(const char* filename);
+    void send_file_thread(std::string filename);
     void write_to_drop_dir_thread();
     void setupConnecting();
     void setupConnection();
@@ -182,6 +187,7 @@ private:
     void handle_suspend();
     void handle_resume();
     void handle_file_chunk_sending(const Event& event);
+    void handle_transfer_frame_sending(const Event& event);
     void handle_file_receive_completed(const Event&);
     void handle_stop_retry();
     void onFileReceiveCompleted();
@@ -212,7 +218,11 @@ private:
     DragFileList m_dragFileList;
     std::string m_dragFileExt;
     Thread* m_sendFileThread;
+    std::int16_t m_protocolMinorVersion;
     Thread* m_writeToDropDirThread;
+    TransferProgress m_transferSendProgress;
+    TransferProgress m_transferReceiveProgress;
+    TransferReceiver m_transferReceiver;
     bool m_useSecureNetwork;
     ClientArgs m_args;
     bool m_enableClipboard;

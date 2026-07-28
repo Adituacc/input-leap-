@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 
@@ -28,6 +29,8 @@ class IStream;
 
 class FileChunk {
 public:
+    static constexpr std::size_t kMaxFileSize = 256u * 1024u * 1024u;
+
     static FileChunk start(std::size_t size);
     static FileChunk data(std::uint8_t* data, size_t dataSize);
     static FileChunk end();
@@ -35,6 +38,20 @@ public:
 
     std::uint8_t mark_ = 0;
     std::string data_;
+};
+
+class FileChunkAssembler {
+public:
+    int assemble(inputleap::IStream* stream, std::string& data_cached,
+                 std::size_t& expected_size);
+
+private:
+    void reset();
+
+    std::size_t received_data_size_ = 0;
+    double elapsed_time_ = 0.0;
+    std::chrono::steady_clock::time_point interval_started_;
+    bool active_ = false;
 };
 
 } // namespace inputleap

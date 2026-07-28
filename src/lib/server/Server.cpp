@@ -30,6 +30,9 @@
 #include "inputleap/XScreen.h"
 #include "inputleap/Exceptions.h"
 #include "inputleap/StreamChunker.h"
+#include "inputleap/TransferCatalog.h"
+#include "inputleap/TransferFrame.h"
+#include "inputleap/TransferSender.h"
 #include "inputleap/KeyState.h"
 #include "inputleap/Screen.h"
 #include "inputleap/PacketStreamFilter.h"
@@ -42,6 +45,7 @@
 #include "base/EventQueueTimer.h"
 #include "base/IEventQueue.h"
 #include "base/Log.h"
+#include "base/PerformanceMetrics.h"
 #include "base/Time.h"
 
 #include <climits>
@@ -89,6 +93,7 @@ Server::Server(
 	m_events(events),
 	m_sendFileThread(nullptr),
 	m_writeToDropDirThread(nullptr),
+    m_transferReceiver(&m_transferReceiveProgress),
 	m_ignoreFileTransfer(false),
 	m_enableClipboard(true),
 	m_maximumClipboardSize(INT_MAX),
@@ -163,6 +168,11 @@ Server::Server(
     if (m_args.m_enableDragDrop) {
         m_events->add_handler(EventType::FILE_CHUNK_SENDING, this,
                               [this](const auto& e){ handle_file_chunk_sending_event(e); });
+        m_events->add_handler(EventType::TRANSFER_V2_FRAME_SENDING, this,
+                              [this](const auto& e) {
+                                  on_transfer_frame_sending(
+                                      e.get_data_as<TransferFrame>());
+                              });
         m_events->add_handler(EventType::FILE_RECEIVE_COMPLETED, this,
                               [this](const auto& e){ handle_file_receive_completed_event(e); });
 	}
@@ -1230,48 +1240,72 @@ void Server::handle_clipboard_changed(const Event& event, BaseClientProxy* clien
 void Server::handle_key_down_event(const Event& event)
 {
     const auto& info = event.get_data_as<IPlatformScreen::KeyInfo>();
+    PerformanceMetrics::instance().record_since(
+        PerformanceStage::CAPTURE_TO_SERVER_DISPATCH, info.m_captureTimeUs);
+    ScopedPerformanceTimer timer{PerformanceStage::SERVER_DISPATCH};
     onKeyDown(info.m_key, info.m_mask, info.m_button, info.screens_or_nullptr());
 }
 
 void Server::handle_key_up_event(const Event& event)
 {
     const auto& info = event.get_data_as<IPlatformScreen::KeyInfo>();
+    PerformanceMetrics::instance().record_since(
+        PerformanceStage::CAPTURE_TO_SERVER_DISPATCH, info.m_captureTimeUs);
+    ScopedPerformanceTimer timer{PerformanceStage::SERVER_DISPATCH};
     onKeyUp(info.m_key, info.m_mask, info.m_button, info.screens_or_nullptr());
 }
 
 void Server::handle_key_repeat_event(const Event& event)
 {
     const auto& info = event.get_data_as<IPlatformScreen::KeyInfo>();
+    PerformanceMetrics::instance().record_since(
+        PerformanceStage::CAPTURE_TO_SERVER_DISPATCH, info.m_captureTimeUs);
+    ScopedPerformanceTimer timer{PerformanceStage::SERVER_DISPATCH};
     onKeyRepeat(info.m_key, info.m_mask, info.m_count, info.m_button);
 }
 
 void Server::handle_button_down_event(const Event& event)
 {
     const auto& info = event.get_data_as<IPlatformScreen::ButtonInfo>();
+    PerformanceMetrics::instance().record_since(
+        PerformanceStage::CAPTURE_TO_SERVER_DISPATCH, info.m_captureTimeUs);
+    ScopedPerformanceTimer timer{PerformanceStage::SERVER_DISPATCH};
     onMouseDown(info.m_button);
 }
 
 void Server::handle_button_up_event(const Event& event)
 {
     const auto& info = event.get_data_as<IPlatformScreen::ButtonInfo>();
+    PerformanceMetrics::instance().record_since(
+        PerformanceStage::CAPTURE_TO_SERVER_DISPATCH, info.m_captureTimeUs);
+    ScopedPerformanceTimer timer{PerformanceStage::SERVER_DISPATCH};
     onMouseUp(info.m_button);
 }
 
 void Server::handle_motion_primary_event(const Event& event)
 {
     const auto& info = event.get_data_as<IPlatformScreen::MotionInfo>();
+    PerformanceMetrics::instance().record_since(
+        PerformanceStage::CAPTURE_TO_SERVER_DISPATCH, info.m_captureTimeUs);
+    ScopedPerformanceTimer timer{PerformanceStage::SERVER_DISPATCH};
     onMouseMovePrimary(info.m_x, info.m_y);
 }
 
 void Server::handle_motion_secondary_event(const Event& event)
 {
     const auto& info = event.get_data_as<IPlatformScreen::MotionInfo>();
+    PerformanceMetrics::instance().record_since(
+        PerformanceStage::CAPTURE_TO_SERVER_DISPATCH, info.m_captureTimeUs);
+    ScopedPerformanceTimer timer{PerformanceStage::SERVER_DISPATCH};
     onMouseMoveSecondary(info.m_x, info.m_y);
 }
 
 void Server::handle_wheel_event(const Event& event)
 {
     const auto& info = event.get_data_as<IPlatformScreen::WheelInfo>();
+    PerformanceMetrics::instance().record_since(
+        PerformanceStage::CAPTURE_TO_SERVER_DISPATCH, info.m_captureTimeUs);
+    ScopedPerformanceTimer timer{PerformanceStage::SERVER_DISPATCH};
     onMouseWheel(info.m_xDelta, info.m_yDelta);
 }
 
@@ -1642,7 +1676,7 @@ Server::onMouseUp(ButtonID id)
 		if (!m_screen->isOnScreen()) {
             std::string& file = m_screen->getDraggingFilename();
 			if (!file.empty()) {
-				sendFileToClient(file.c_str());
+				sendFileToClient(file);
 			}
 		}
 
@@ -1791,15 +1825,10 @@ Server::sendDragInfo(BaseClientProxy* newScreen)
     std::uint32_t fileCount = DragInformation::setupDragInfo(m_dragFileList, infoString);
 
 	if (fileCount > 0) {
-		char* info = nullptr;
-		size_t size = infoString.size();
-		info = new char[size];
-		memcpy(info, infoString.c_str(), size);
-
 		LOG_DEBUG2("sending drag information to client");
-		LOG_DEBUG3("dragging file list: %s", info);
-		LOG_DEBUG3("dragging file list string size: %zi", size);
-		newScreen->sendDragInfo(fileCount, info, size);
+		LOG_DEBUG3("dragging file list: %s", infoString.c_str());
+		LOG_DEBUG3("dragging file list string size: %zi", infoString.size());
+		newScreen->sendDragInfo(fileCount, infoString.c_str(), infoString.size());
 	}
 }
 
@@ -1932,6 +1961,7 @@ void Server::onMouseMoveSecondary(std::int32_t dx, std::int32_t dy)
 
 	if (jump) {
 		if (m_sendFileThread != nullptr) {
+			m_transferSendProgress.cancel();
 			StreamChunker::interruptFile();
 			m_sendFileThread = nullptr;
 		}
@@ -2213,26 +2243,59 @@ Server::isReceivedFileSizeValid()
 }
 
 void
-Server::sendFileToClient(const char* filename)
+Server::sendFileToClient(const std::string& filename)
 {
 	if (m_sendFileThread != nullptr) {
+		m_transferSendProgress.cancel();
 		StreamChunker::interruptFile();
 	}
 
     m_sendFileThread = new Thread([this, filename]() { send_file_thread(filename); });
 }
 
-void Server::send_file_thread(const char* filename)
+void Server::on_transfer_frame_sending(const TransferFrame& frame)
+{
+    assert(m_active != nullptr);
+    if (!m_active->supportsTransferV2()) {
+        throw std::runtime_error("active client does not support transfer-v2");
+    }
+    m_active->transfer_frame_sending(frame);
+}
+
+void Server::send_file_thread(std::string filename)
 {
 	try {
-		LOG_DEBUG("sending file to client, filename=%s", filename);
-		StreamChunker::sendFile(filename, m_events, this);
+		LOG_DEBUG("sending file to client, filename=%s", filename.c_str());
+        if (m_active != nullptr && m_active->supportsTransferV2()) {
+            auto plan = TransferCatalog::plan_from_paths({fs::u8path(filename)});
+            TransferSender sender(&m_transferSendProgress);
+            sender.send(plan, [this](const TransferFrame& frame) {
+                m_events->add_event(
+                    EventType::TRANSFER_V2_FRAME_SENDING, this,
+                    create_event_data<TransferFrame>(frame));
+            });
+        }
+        else {
+            StreamChunker::sendFile(filename.c_str(), m_events, this);
+        }
 	}
 	catch (std::runtime_error &error) {
 		LOG_ERR("failed sending file chunks, error: %s", error.what());
 	}
 
 	m_sendFileThread = nullptr;
+}
+
+void Server::handleTransferV2Frame(const TransferFrame& frame)
+{
+    const auto completed =
+        m_transferReceiver.handle_frame(frame, fs::u8path(m_screen->getDropTarget()));
+    for (const auto& path : completed) {
+        LOG_INFO("completed transfer-v2 item \"%s\"", path.u8string().c_str());
+    }
+    if (!completed.empty()) {
+        m_events->add_event(EventType::FILE_RECEIVE_COMPLETED, this);
+    }
 }
 
 void Server::dragInfoReceived(std::uint32_t fileNum, std::string content)

@@ -18,9 +18,53 @@
 #include "net/SecureUtils.h"
 
 #include <gtest/gtest.h>
+#include <openssl/ssl.h>
 #include "test/global/TestUtils.h"
 
 namespace inputleap {
+
+TEST(SecureUtilsTest, ConfigureTlsContextRejectsNullContext)
+{
+    EXPECT_FALSE(configure_tls_context(nullptr));
+}
+
+TEST(SecureUtilsTest, ConfigureTlsContextAppliesSecurePolicy)
+{
+    SSL_CTX* context = SSL_CTX_new(TLS_method());
+    ASSERT_NE(context, nullptr);
+
+    ASSERT_TRUE(configure_tls_context(context));
+    EXPECT_EQ(SSL_CTX_get_min_proto_version(context), TLS1_2_VERSION);
+
+    const auto options = SSL_CTX_get_options(context);
+    EXPECT_NE(options & SSL_OP_NO_COMPRESSION, 0u);
+    EXPECT_NE(options & SSL_OP_NO_RENEGOTIATION, 0u);
+
+    const auto* ciphers = SSL_CTX_get_ciphers(context);
+    ASSERT_NE(ciphers, nullptr);
+    for (int i = 0; i < sk_SSL_CIPHER_num(ciphers); ++i) {
+        const SSL_CIPHER* cipher = sk_SSL_CIPHER_value(ciphers, i);
+        const std::string version = SSL_CIPHER_get_version(cipher);
+        if (version == "TLSv1.2") {
+            const std::string name = SSL_CIPHER_get_name(cipher);
+            EXPECT_EQ(name.find("ECDHE-"), 0u) << name;
+            EXPECT_TRUE(name.find("-GCM-") != std::string::npos ||
+                        name.find("CHACHA20-POLY1305") != std::string::npos) << name;
+        }
+    }
+
+    SSL_CTX_free(context);
+}
+
+TEST(SecureUtilsTest, TlsRetryDirectionUsesOpenSslReadiness)
+{
+    EXPECT_EQ(tls_retry_direction(SSL_ERROR_WANT_READ), TlsRetryDirection::READ);
+    EXPECT_EQ(tls_retry_direction(SSL_ERROR_WANT_WRITE), TlsRetryDirection::WRITE);
+    EXPECT_EQ(tls_retry_direction(SSL_ERROR_WANT_CONNECT), TlsRetryDirection::READ_WRITE);
+    EXPECT_EQ(tls_retry_direction(SSL_ERROR_WANT_ACCEPT), TlsRetryDirection::READ_WRITE);
+    EXPECT_EQ(tls_retry_direction(SSL_ERROR_NONE), TlsRetryDirection::NONE);
+    EXPECT_EQ(tls_retry_direction(SSL_ERROR_SSL), TlsRetryDirection::NONE);
+}
 
 TEST(SecureUtilsTest, FormatSslFingerprintHexWithSeparators)
 {

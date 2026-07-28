@@ -287,9 +287,9 @@ public:
     void clearDraggingFilename();
 
     //! Get the drop target directory
-    const std::string& getDropTarget() const;
+    virtual const std::string& getDropTarget() const;
     //! Set the drop target directory
-    void setDropTarget(const std::string&);
+    virtual void setDropTarget(const std::string&);
 
     //@}
 

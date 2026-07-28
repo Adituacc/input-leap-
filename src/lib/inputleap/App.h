@@ -164,6 +164,7 @@ private:
     "      --enable-drag-drop   enable file drag & drop.\n" \
     "      --enable-crypto      enable the crypto (ssl) plugin (default, deprecated).\n" \
     "      --disable-crypto     disable the crypto (ssl) plugin.\n" \
+    "      --enable-perf-metrics collect and report input latency metrics.\n" \
     "      --profile-dir <path> use named profile directory instead.\n" \
     "      --drop-dir <path>    use named drop target directory instead.\n"
 

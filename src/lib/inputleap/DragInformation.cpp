@@ -126,8 +126,11 @@ bool DragInformation::isFileValid(std::string filename)
 size_t DragInformation::stringToNum(std::string& str)
 {
     std::istringstream iss(str.c_str());
-    size_t size;
+    size_t size = 0;
     iss >> size;
+    if (iss.fail()) {
+        return 0;
+    }
     return size;
 }
 

@@ -21,6 +21,7 @@
 #include "inputleap/clipboard_types.h"
 #include "inputleap/key_types.h"
 #include "inputleap/Fwd.h"
+#include "inputleap/FileChunk.h"
 #include "base/Fwd.h"
 #include "base/Event.h"
 #include "base/EventTarget.h"
@@ -56,6 +57,7 @@ public:
 
     // sending file chunk to server
     void file_chunk_sending(const FileChunk& chunk);
+    void transfer_frame_sending(const TransferFrame& frame);
 
     // sending dragging information to server
     void sendDragInfo(std::uint32_t fileCount, const char* info, size_t size);
@@ -105,6 +107,7 @@ private:
     void queryInfo();
     void infoAcknowledgment();
     void fileChunkReceived();
+    void transferFrameReceived();
     void dragInfoReceived();
     void handle_clipboard_sending_event(const Event&);
 
@@ -130,6 +133,7 @@ private:
 
     MessageParser m_parser;
     IEventQueue* m_events;
+    FileChunkAssembler m_file_chunk_assembler;
 };
 
 } // namespace inputleap

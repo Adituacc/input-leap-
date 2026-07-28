@@ -31,6 +31,7 @@
 #include "client/Client.h"
 #include "inputleap/FileChunk.h"
 #include "inputleap/StreamChunker.h"
+#include "io/filesystem.h"
 #include "net/SocketMultiplexer.h"
 #include "net/NetworkAddress.h"
 #include "net/TCPSocketFactory.h"
@@ -49,6 +50,7 @@ namespace inputleap {
 using ::testing::_;
 using ::testing::NiceMock;
 using ::testing::Return;
+using ::testing::ReturnRef;
 using ::testing::Invoke;
 
 #define TEST_PORT 24803
@@ -70,8 +72,11 @@ public:
     NetworkTests() :
         m_mockData(nullptr),
         m_mockDataSize(0),
-        m_mockFileSize(0)
+        m_mockFileSize(0),
+        m_dropTarget((fs::u8path(testing::TempDir()) /
+                      "inputleap-network-transfer").u8string())
     {
+        fs::remove_all(fs::u8path(m_dropTarget));
         m_mockData = newMockData(kMockDataSize);
         createFile(m_mockFile, kMockFilename, kMockFileSize);
     }
@@ -79,6 +84,7 @@ public:
     ~NetworkTests()
     {
         remove(kMockFilename);
+        fs::remove_all(fs::u8path(m_dropTarget));
         delete[] m_mockData;
     }
 
@@ -102,6 +108,7 @@ public:
     size_t                m_mockDataSize;
     std::fstream m_mockFile;
     size_t                m_mockFileSize;
+    std::string m_dropTarget;
 };
 
 TEST_F(NetworkTests, sendToClient_mockData)
@@ -118,6 +125,7 @@ TEST_F(NetworkTests, sendToClient_mockData)
                             &m_events,
                             ConnectionSecurityLevel::PLAINTEXT);
     NiceMock<MockScreen> serverScreen;
+    ON_CALL(serverScreen, getDropTarget()).WillByDefault(ReturnRef(m_dropTarget));
     NiceMock<MockPrimaryClient> primaryClient;
     NiceMock<MockConfig> serverConfig;
     NiceMock<MockInputFilter> serverInputFilter;
@@ -139,6 +147,7 @@ TEST_F(NetworkTests, sendToClient_mockData)
 
     // client
     NiceMock<MockScreen> clientScreen;
+    ON_CALL(clientScreen, getDropTarget()).WillByDefault(ReturnRef(m_dropTarget));
     SocketMultiplexer clientSocketMultiplexer;
     TCPSocketFactory* clientSocketFactory = new TCPSocketFactory(&m_events, &clientSocketMultiplexer);
 
@@ -179,6 +188,7 @@ TEST_F(NetworkTests, sendToClient_mockFile)
                             std::make_unique<TCPSocketFactory>(&m_events, &serverSocketMultiplexer),
                             &m_events, ConnectionSecurityLevel::PLAINTEXT);
     NiceMock<MockScreen> serverScreen;
+    ON_CALL(serverScreen, getDropTarget()).WillByDefault(ReturnRef(m_dropTarget));
     NiceMock<MockPrimaryClient> primaryClient;
     NiceMock<MockConfig> serverConfig;
     NiceMock<MockInputFilter> serverInputFilter;
@@ -200,6 +210,7 @@ TEST_F(NetworkTests, sendToClient_mockFile)
 
     // client
     NiceMock<MockScreen> clientScreen;
+    ON_CALL(clientScreen, getDropTarget()).WillByDefault(ReturnRef(m_dropTarget));
     SocketMultiplexer clientSocketMultiplexer;
     TCPSocketFactory* clientSocketFactory = new TCPSocketFactory(&m_events, &clientSocketMultiplexer);
 
@@ -239,6 +250,7 @@ TEST_F(NetworkTests, sendToServer_mockData)
                             std::make_unique<TCPSocketFactory>(&m_events, &serverSocketMultiplexer),
                             &m_events, ConnectionSecurityLevel::PLAINTEXT);
     NiceMock<MockScreen> serverScreen;
+    ON_CALL(serverScreen, getDropTarget()).WillByDefault(ReturnRef(m_dropTarget));
     NiceMock<MockPrimaryClient> primaryClient;
     NiceMock<MockConfig> serverConfig;
     NiceMock<MockInputFilter> serverInputFilter;
@@ -254,6 +266,7 @@ TEST_F(NetworkTests, sendToServer_mockData)
 
     // client
     NiceMock<MockScreen> clientScreen;
+    ON_CALL(clientScreen, getDropTarget()).WillByDefault(ReturnRef(m_dropTarget));
     SocketMultiplexer clientSocketMultiplexer;
     TCPSocketFactory* clientSocketFactory = new TCPSocketFactory(&m_events, &clientSocketMultiplexer);
 
@@ -299,6 +312,7 @@ TEST_F(NetworkTests, sendToServer_mockFile)
                             std::make_unique<TCPSocketFactory>(&m_events, &serverSocketMultiplexer),
                             &m_events, ConnectionSecurityLevel::PLAINTEXT);
     NiceMock<MockScreen> serverScreen;
+    ON_CALL(serverScreen, getDropTarget()).WillByDefault(ReturnRef(m_dropTarget));
     NiceMock<MockPrimaryClient> primaryClient;
     NiceMock<MockConfig> serverConfig;
     NiceMock<MockInputFilter> serverInputFilter;
@@ -314,6 +328,7 @@ TEST_F(NetworkTests, sendToServer_mockFile)
 
     // client
     NiceMock<MockScreen> clientScreen;
+    ON_CALL(clientScreen, getDropTarget()).WillByDefault(ReturnRef(m_dropTarget));
     SocketMultiplexer clientSocketMultiplexer;
     TCPSocketFactory* clientSocketFactory = new TCPSocketFactory(&m_events, &clientSocketMultiplexer);
 
@@ -390,8 +405,10 @@ void NetworkTests::sendToClient_mockFile_handle_client_connected(const Event&,
 
 void NetworkTests::sendToClient_mockFile_file_receive_completed(const Event& event)
 {
-    Client* client = const_cast<Client*>(static_cast<const Client*>(event.getTarget()));
-    EXPECT_TRUE(client->isReceivedFileSizeValid());
+    (void)event;
+    const auto received = fs::u8path(m_dropTarget) / kMockFilename;
+    ASSERT_TRUE(fs::exists(received));
+    EXPECT_EQ(fs::file_size(received), kMockFileSize);
 
     m_events.raiseQuitEvent();
 }
@@ -416,8 +433,10 @@ void NetworkTests::sendToServer_mockFile_handle_client_connected(const Event&, C
 
 void NetworkTests::sendToServer_mockFile_file_recieve_completed(const Event& event)
 {
-    Server* server = const_cast<Server*>(static_cast<const Server*>(event.getTarget()));
-    EXPECT_TRUE(server->isReceivedFileSizeValid());
+    (void)event;
+    const auto received = fs::u8path(m_dropTarget) / kMockFilename;
+    ASSERT_TRUE(fs::exists(received));
+    EXPECT_EQ(fs::file_size(received), kMockFileSize);
 
     m_events.raiseQuitEvent();
 }

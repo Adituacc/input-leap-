@@ -20,6 +20,7 @@
 #include "inputleap/clipboard_types.h"
 #include "base/Fwd.h"
 
+#include <atomic>
 #include <string>
 
 namespace inputleap {
@@ -33,8 +34,8 @@ public:
     static void interruptFile();
 
 private:
-    static bool            s_isChunkingFile;
-    static bool            s_interruptFile;
+    static std::atomic_bool s_isChunkingFile;
+    static std::atomic_bool s_interruptFile;
 };
 
 } // namespace inputleap

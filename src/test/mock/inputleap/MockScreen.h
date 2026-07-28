@@ -34,6 +34,7 @@ public:
     MOCK_METHOD0(disable, void());
     MOCK_CONST_METHOD4(getShape, void(std::int32_t&, std::int32_t&, std::int32_t&, std::int32_t&));
     MOCK_CONST_METHOD2(getCursorPos, void(std::int32_t&, std::int32_t&));
+    MOCK_CONST_METHOD0(getDropTarget, const std::string&());
     MOCK_METHOD0(resetOptions, void());
     MOCK_METHOD1(setOptions, void(const OptionsList&));
     MOCK_METHOD0(enable, void());

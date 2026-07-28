@@ -310,6 +310,26 @@ elseif (UNIX AND NOT APPLE)
     install(FILES res/io.github.input_leap.input-leap.desktop DESTINATION share/applications)
 endif()
 
+if (WIN32)
+    set(INPUTLEAP_DOCUMENTATION_INSTALL_DIR .)
+elseif (UNIX AND NOT APPLE)
+    set(INPUTLEAP_DOCUMENTATION_INSTALL_DIR share/doc/input-leap)
+endif()
+
+if (DEFINED INPUTLEAP_DOCUMENTATION_INSTALL_DIR)
+    install(
+        FILES
+            LICENSE
+            README.md
+            doc/beta2-release-notes.md
+            doc/cross-platform-drag-drop.md
+            doc/performance.md
+            doc/security.md
+            doc/transfer-v2.md
+        DESTINATION ${INPUTLEAP_DOCUMENTATION_INSTALL_DIR}
+    )
+endif()
+
 #
 # Windows Installer
 #

@@ -27,6 +27,8 @@
 #include "inputleap/INode.h"
 #include "inputleap/DragInformation.h"
 #include "inputleap/ServerArgs.h"
+#include "inputleap/TransferProgress.h"
+#include "inputleap/TransferReceiver.h"
 #include "base/Fwd.h"
 #include "base/Event.h"
 #include "base/EventTarget.h"
@@ -149,10 +151,11 @@ public:
     void disconnect();
 
     //! Create a new thread and use it to send file to client
-    void sendFileToClient(const char* filename);
+    void sendFileToClient(const std::string& filename);
 
     //! Received dragging information from client
     void dragInfoReceived(std::uint32_t fileNum, std::string content);
+    void handleTransferV2Frame(const TransferFrame& frame);
 
     //! Store ClientListener pointer
     void setListener(ClientListener* p) { m_clientListener = p; }
@@ -333,6 +336,7 @@ private:
     void onMouseMoveSecondary(std::int32_t dx, std::int32_t dy);
     void onMouseWheel(std::int32_t xDelta, std::int32_t yDelta);
     void on_file_chunk_sending(const FileChunk& chunk);
+    void on_transfer_frame_sending(const TransferFrame& frame);
     void onFileReceiveCompleted();
 
     // add client to list and attach event handlers for client
@@ -359,7 +363,7 @@ private:
     void forceLeaveClient(BaseClientProxy* client);
 
     // thread function for sending file
-    void send_file_thread(const char* filename);
+    void send_file_thread(std::string filename);
 
     // thread function for writing file to drop directory
     void write_to_drop_dir_thread();
@@ -473,6 +477,9 @@ private:
     DragFileList m_fakeDragFileList;
     Thread* m_sendFileThread;
     Thread* m_writeToDropDirThread;
+    TransferProgress m_transferSendProgress;
+    TransferProgress m_transferReceiveProgress;
+    TransferReceiver m_transferReceiver;
     std::string m_dragFileExt;
     bool m_ignoreFileTransfer;
     bool m_enableClipboard;

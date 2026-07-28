@@ -21,6 +21,7 @@
 #include "server/ClientProxy.h"
 #include "base/Fwd.h"
 #include "inputleap/Clipboard.h"
+#include "inputleap/FileChunk.h"
 #include "inputleap/protocol_types.h"
 
 namespace inputleap {
@@ -32,10 +33,13 @@ class IStream;
 class ClientProxy1_6 : public ClientProxy {
 public:
     ClientProxy1_6(const std::string& name, std::unique_ptr<IClientConnection> backend,
-                   Server* server, IEventQueue* events);
+                   Server* server, IEventQueue* events,
+                   std::int16_t protocol_minor = 6);
     ~ClientProxy1_6() override;
 
     Server* getServer() { return m_server; }
+    std::int16_t getProtocolMinorVersion() const { return m_protocol_minor; }
+    bool supportsTransferV2() const override { return m_protocol_minor >= 7; }
 
     IStream* getStream() const;
 
@@ -65,6 +69,7 @@ public:
     void setOptions(const OptionsList& options) override;
     void sendDragInfo(std::uint32_t fileCount, const char* info, size_t size) override;
     void file_chunk_sending(const FileChunk& chunk) override;
+    void transfer_frame_sending(const TransferFrame& frame) override;
 
 protected:
     virtual bool parseHandshakeMessage(const std::uint8_t* code);
@@ -79,6 +84,7 @@ protected:
     virtual void keepAlive();
 
     void fileChunkReceived();
+    void transferFrameReceived();
     void dragInfoReceived();
 
 private:
@@ -119,6 +125,8 @@ protected:
     double m_keepAliveRate;
     EventQueueTimer* m_keepAliveTimer;
     Server* m_server;
+    FileChunkAssembler m_file_chunk_assembler;
+    std::int16_t m_protocol_minor;
 };
 
 } // namespace inputleap

@@ -34,6 +34,7 @@ if(INPUTLEAP_ADD_HEADERS)
 endif()
 
 add_library(synlib STATIC ${sources})
+target_link_libraries(synlib OpenSSL::Crypto)
 
 if (UNIX)
     target_link_libraries(synlib arch client ipc net base platform mt server)

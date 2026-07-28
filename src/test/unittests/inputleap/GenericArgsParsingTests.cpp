@@ -121,10 +121,15 @@ TEST(GenericArgsParsingTests, parseGenericArgs_deamonCmd_daemonTrue)
     ArgsBase argsBase;
     argParser.setArgsBase(argsBase);
 
+#if SYSAPI_WIN32
+    EXPECT_THROW(argParser.parseGenericArgs(a), XArgvParserError);
+    EXPECT_FALSE(argsBase.m_daemon);
+#else
     argParser.parseGenericArgs(a);
 
-    EXPECT_EQ(true, argsBase.m_daemon);
+    EXPECT_TRUE(argsBase.m_daemon);
     EXPECT_EQ(a.size(), 0); // all args consumed
+#endif
 }
 
 TEST(GenericArgsParsingTests, parseGenericArgs_nameCmd_saveName)
@@ -141,6 +146,22 @@ TEST(GenericArgsParsingTests, parseGenericArgs_nameCmd_saveName)
 
     EXPECT_EQ("mock", argsBase.m_name);
     EXPECT_EQ(a.size(), 0); // all args consumed
+}
+
+TEST(GenericArgsParsingTests, parseGenericArgs_enablePerfMetrics_enablesCollector)
+{
+    const int argc = 2;
+    const char* command[argc] = { "stub", "--enable-perf-metrics" };
+    Argv arguments(argc, command);
+
+    ArgParser parser(nullptr);
+    ArgsBase args;
+    parser.setArgsBase(args);
+
+    parser.parseGenericArgs(arguments);
+
+    EXPECT_TRUE(args.m_enablePerformanceMetrics);
+    EXPECT_EQ(arguments.size(), 0);
 }
 
 TEST(GenericArgsParsingTests, parseGenericArgs_noRestartCmd_restartFalse)

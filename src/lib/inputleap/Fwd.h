@@ -50,6 +50,7 @@ class DragInformation;
 
 // FileChunk.h
 class FileChunk;
+struct TransferFrame;
 
 // IApp.h
 class IApp;

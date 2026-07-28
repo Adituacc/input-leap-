@@ -30,6 +30,7 @@
 #include "ipc/IpcMessage.h"
 #include "ipc/Ipc.h"
 #include "base/EventQueue.h"
+#include "base/PerformanceMetrics.h"
 #include "common/DataDirectories.h"
 
 #if SYSAPI_WIN32
@@ -37,6 +38,7 @@
 #endif
 
 #include <iostream>
+#include <cstdlib>
 #include <stdio.h>
 
 #if WINAPI_CARBON
@@ -118,6 +120,7 @@ App::run(int argc, char** argv)
         LOG_CRIT("An unknown error occurred.\n");
     }
 
+    PerformanceMetrics::instance().log_summary();
     appUtil().beforeAppExit();
 
     return result;
@@ -170,6 +173,20 @@ App::initApp(int argc, const char** argv)
         m_bye(kExitArgs);
     }
     loggingFilterWarning();
+
+    const char* performance_environment = std::getenv("INPUTLEAP_PERF_METRICS");
+    const bool performance_environment_enabled =
+        performance_environment != nullptr &&
+        (std::string{performance_environment} == "1" ||
+         std::string{performance_environment} == "true" ||
+         std::string{performance_environment} == "TRUE");
+    const bool performance_metrics_enabled =
+        argsBase().m_enablePerformanceMetrics || performance_environment_enabled;
+
+    PerformanceMetrics::instance().set_enabled(performance_metrics_enabled);
+    if (performance_metrics_enabled) {
+        LOG_NOTE("performance metrics enabled; summary will be reported on shutdown");
+    }
 
     if (argsBase().m_enableDragDrop) {
         LOG_INFO("drag and drop enabled");

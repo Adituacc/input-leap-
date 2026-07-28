@@ -58,6 +58,7 @@ private:
     std::uint32_t m_size;
     StreamBuffer m_buffer;
     bool m_inputShutdown;
+    bool m_inputFormatError;
     IEventQueue* m_events;
 };
 

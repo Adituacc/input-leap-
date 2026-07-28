@@ -26,6 +26,7 @@
 #include "net/ConnectionSecurityLevel.h"
 #include "net/Fwd.h"
 #include <deque>
+#include <map>
 #include <memory>
 #include <set>
 
@@ -33,6 +34,7 @@ namespace inputleap {
 
 class ClientProxy;
 class ClientProxyUnknown;
+class EventQueueTimer;
 class Server;
 
 class ClientListener : public EventTarget {
@@ -70,9 +72,11 @@ private:
     // client connection event handlers
     void handle_client_connecting();
     void handle_client_accepted(IDataSocket* socket_ptr);
+    void handle_secure_handshake_timeout(IDataSocket* socket_ptr);
     void handle_unknown_client(ClientProxyUnknown* client);
     void handle_client_disconnected(ClientProxy* client);
 
+    void remove_secure_handshake_timer(IDataSocket* socket_ptr);
     void cleanupListenSocket();
     void cleanupClientSockets();
 
@@ -88,6 +92,7 @@ private:
     IEventQueue* m_events;
     ConnectionSecurityLevel security_level_;
     UniquePtrContainer<IDataSocket> client_sockets_;
+    std::map<IDataSocket*, EventQueueTimer*> secure_handshake_timers_;
 };
 
 } // namespace inputleap

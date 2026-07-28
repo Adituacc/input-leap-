@@ -20,6 +20,7 @@
 #include "inputleap/IPlatformScreen.h"
 #include "inputleap/protocol_types.h"
 #include "base/Log.h"
+#include "base/PerformanceMetrics.h"
 #include "base/IEventQueue.h"
 #include "server/ClientProxy.h"
 
@@ -181,6 +182,8 @@ Screen::screensaver(bool activate)
 void
 Screen::keyDown(KeyID id, KeyModifierMask mask, KeyButton button)
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_INJECTION};
+
     // check for ctrl+alt+del emulation
     if (id == kKeyDelete &&
         (mask & (KeyModifierControl | KeyModifierAlt)) ==
@@ -195,6 +198,8 @@ Screen::keyDown(KeyID id, KeyModifierMask mask, KeyButton button)
 
 void Screen::keyRepeat(KeyID id, KeyModifierMask mask, std::int32_t count, KeyButton button)
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_INJECTION};
+
     assert(!m_isPrimary);
     m_screen->fakeKeyRepeat(id, mask, count, button);
 }
@@ -202,35 +207,41 @@ void Screen::keyRepeat(KeyID id, KeyModifierMask mask, std::int32_t count, KeyBu
 void
 Screen::keyUp(KeyID, KeyModifierMask, KeyButton button)
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_INJECTION};
     m_screen->fakeKeyUp(button);
 }
 
 void
 Screen::mouseDown(ButtonID button)
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_INJECTION};
     m_screen->fakeMouseButton(button, true);
 }
 
 void
 Screen::mouseUp(ButtonID button)
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_INJECTION};
     m_screen->fakeMouseButton(button, false);
 }
 
 void Screen::mouseMove(std::int32_t x, std::int32_t y)
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_INJECTION};
     assert(!m_isPrimary);
     m_screen->fakeMouseMove(x, y);
 }
 
 void Screen::mouseRelativeMove(std::int32_t dx, std::int32_t dy)
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_INJECTION};
     assert(!m_isPrimary);
     m_screen->fakeMouseRelativeMove(dx, dy);
 }
 
 void Screen::mouseWheel(std::int32_t xDelta, std::int32_t yDelta)
 {
+    ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_INJECTION};
     assert(!m_isPrimary);
     m_screen->fakeMouseWheel(xDelta, yDelta);
 }

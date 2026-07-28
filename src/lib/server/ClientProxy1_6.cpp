@@ -24,6 +24,7 @@
 #include "inputleap/Exceptions.h"
 #include "inputleap/FileChunk.h"
 #include "inputleap/StreamChunker.h"
+#include "inputleap/TransferFrame.h"
 #include "server/Server.h"
 #include "io/IStream.h"
 #include "base/Log.h"
@@ -36,14 +37,16 @@ namespace inputleap {
 
 ClientProxy1_6::ClientProxy1_6(const std::string& name,
                                std::unique_ptr<IClientConnection> backend,
-                               Server* server, IEventQueue* events) :
+                               Server* server, IEventQueue* events,
+                               std::int16_t protocol_minor) :
     ClientProxy(name, std::move(backend)),
     m_heartbeatTimer(nullptr),
     m_parser(&ClientProxy1_6::parseHandshakeMessage),
     m_events(events),
     m_keepAliveRate(kKeepAliveRate),
     m_keepAliveTimer(nullptr),
-    m_server{server}
+    m_server{server},
+    m_protocol_minor{protocol_minor}
 {
     // install event handlers
     m_events->add_handler(EventType::STREAM_INPUT_READY, get_conn().get_event_target(),
@@ -218,6 +221,12 @@ bool ClientProxy1_6::parseMessage(const std::uint8_t* code)
     if (memcmp(code, kMsgDFileTransfer, 4) == 0) {
         fileChunkReceived();
         return true;
+    } else if (memcmp(code, kMsgDTransferV2, 4) == 0) {
+        if (!supportsTransferV2()) {
+            return false;
+        }
+        transferFrameReceived();
+        return true;
     } else if (memcmp(code, kMsgDDragInfo, 4) == 0) {
         dragInfoReceived();
         return true;
@@ -387,6 +396,12 @@ void ClientProxy1_6::file_chunk_sending(const FileChunk& chunk)
     get_conn().send_file_chunk_1_6(chunk);
 }
 
+void ClientProxy1_6::transfer_frame_sending(const TransferFrame& frame)
+{
+    std::string wire = frame.serialize();
+    ProtocolUtil::writef(getStream(), kMsgDTransferV2, &wire);
+}
+
 void ClientProxy1_6::screensaver(bool on)
 {
     get_conn().send_screensaver_1_6(on);
@@ -514,8 +529,9 @@ void ClientProxy1_6::keepAlive()
 void ClientProxy1_6::fileChunkReceived()
 {
     Server* server = getServer();
-    int result = FileChunk::assemble(getStream(), server->getReceivedFileData(),
-                                     server->getExpectedFileSize());
+    int result = m_file_chunk_assembler.assemble(
+        getStream(), server->getReceivedFileData(),
+        server->getExpectedFileSize());
 
     if (result == kFinish) {
         m_events->add_event(EventType::FILE_RECEIVE_COMPLETED, server);
@@ -525,6 +541,20 @@ void ClientProxy1_6::fileChunkReceived()
             LOG_DEBUG("start receiving %s", filename.c_str());
         }
     }
+}
+
+void ClientProxy1_6::transferFrameReceived()
+{
+    std::string wire;
+    if (!ProtocolUtil::readf(getStream(), kMsgDTransferV2 + 4, &wire)) {
+        throw XBadClient("invalid transfer-v2 frame");
+    }
+    TransferFrame frame;
+    std::string error;
+    if (!TransferFrame::deserialize(wire, frame, &error)) {
+        throw XBadClient(error);
+    }
+    m_server->handleTransferV2Frame(frame);
 }
 
 void ClientProxy1_6::dragInfoReceived()

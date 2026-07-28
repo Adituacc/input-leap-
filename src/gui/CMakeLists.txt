@@ -206,10 +206,15 @@ target_compile_definitions (input-leap PRIVATE -DINPUTLEAP_VERSION_STAGE="${INPU
 target_compile_definitions (input-leap PRIVATE -DINPUTLEAP_REVISION="${INPUTLEAP_REVISION}")
 
 if (BUILD_MSWINDOWS)
-    include_directories ($ENV{BONJOUR_SDK_HOME}/Include)
+    find_path (DNSSD_INCLUDE_DIR dns_sd.h
+               HINTS ENV BONJOUR_SDK_HOME
+               PATH_SUFFIXES "Include"
+               REQUIRED)
     find_library (DNSSD_LIB dnssd.lib
                   HINTS ENV BONJOUR_SDK_HOME
-                  PATH_SUFFIXES "Lib/x64")
+                  PATH_SUFFIXES "Lib/x64"
+                  REQUIRED)
+    target_include_directories (input-leap PRIVATE ${DNSSD_INCLUDE_DIR})
     set_target_properties (input-leap PROPERTIES LINK_FLAGS "/NODEFAULTLIB:LIBCMT")
     target_link_libraries (input-leap ${DNSSD_LIB})
 endif()
@@ -250,9 +255,11 @@ endif()
 
 if(INPUTLEAP_BUILD_TESTS)
     set(GUI_TEST_SOURCE_FILES
+        test/AppConfigTests.cpp
         test/KeySequenceTests.cpp
         test/HotkeyTests.cpp
         test/main.cpp
+        src/AppConfig.cpp
     )
 
     add_executable(guiunittests

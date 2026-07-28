@@ -285,8 +285,15 @@ size_t
 stringToSizeType(std::string string)
 {
     std::istringstream iss(string);
-    size_t value;
+    size_t value = 0;
     iss >> value;
+    if (iss.fail()) {
+        return 0;
+    }
+    iss >> std::ws;
+    if (!iss.eof()) {
+        return 0;
+    }
     return value;
 }
 

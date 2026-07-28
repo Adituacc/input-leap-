@@ -25,10 +25,18 @@
 #include "net/IListenSocket.h"
 #include "net/ISocketFactory.h"
 #include "net/XSocket.h"
+#include "base/EventQueueTimer.h"
 #include "base/Log.h"
 #include "base/IEventQueue.h"
 
 namespace inputleap {
+
+namespace {
+
+constexpr std::size_t kMaxPendingSecureHandshakes = 64;
+constexpr double kSecureHandshakeTimeoutSeconds = 10.0;
+
+} // namespace
 
 ClientListener::ClientListener(const NetworkAddress& address,
                                std::unique_ptr<ISocketFactory> socket_factory,
@@ -117,6 +125,14 @@ void ClientListener::handle_client_connecting()
     }
 
     auto socket_ptr = socket.get();
+
+    if (security_level_ != ConnectionSecurityLevel::PLAINTEXT &&
+        secure_handshake_timers_.size() >= kMaxPendingSecureHandshakes) {
+        LOG_WARN("rejecting connection: too many pending secure handshakes");
+        socket->close();
+        return;
+    }
+
     client_sockets_.insert(std::move(socket));
 
     m_events->add_handler(EventType::CLIENT_LISTENER_ACCEPTED, socket_ptr->get_event_target(),
@@ -124,6 +140,17 @@ void ClientListener::handle_client_connecting()
     {
         handle_client_accepted(socket_ptr);
     });
+
+    if (security_level_ != ConnectionSecurityLevel::PLAINTEXT) {
+        auto* timer = m_events->newOneShotTimer(kSecureHandshakeTimeoutSeconds,
+                                                socket_ptr->get_event_target());
+        secure_handshake_timers_.emplace(socket_ptr, timer);
+        m_events->add_handler(EventType::TIMER, socket_ptr->get_event_target(),
+                              [this, socket_ptr](const auto&)
+        {
+            handle_secure_handshake_timeout(socket_ptr);
+        });
+    }
 
     // When using non SSL, server accepts clients immediately, while SSL
     // has to call secure accept which may require retry
@@ -135,6 +162,10 @@ void ClientListener::handle_client_connecting()
 void ClientListener::handle_client_accepted(IDataSocket* socket_ptr)
 {
     LOG_NOTE("accepted client connection");
+    m_events->remove_handler(EventType::CLIENT_LISTENER_ACCEPTED,
+                             socket_ptr->get_event_target());
+    remove_secure_handshake_timer(socket_ptr);
+
     auto socket = client_sockets_.erase(socket_ptr);
     if (!socket) {
         throw std::runtime_error("Got more than one CLIENT_LISTENER_ACCEPTED event");
@@ -155,6 +186,31 @@ void ClientListener::handle_client_accepted(IDataSocket* socket_ptr)
                           [this, client](const auto& e){ handle_unknown_client(client); });
     m_events->add_handler(EventType::CLIENT_PROXY_UNKNOWN_FAILURE, client,
                           [this, client](const auto& e){ handle_unknown_client(client); });
+}
+
+void ClientListener::handle_secure_handshake_timeout(IDataSocket* socket_ptr)
+{
+    LOG_WARN("closing connection: secure handshake timed out");
+    m_events->remove_handler(EventType::CLIENT_LISTENER_ACCEPTED,
+                             socket_ptr->get_event_target());
+    remove_secure_handshake_timer(socket_ptr);
+
+    auto socket = client_sockets_.erase(socket_ptr);
+    if (socket) {
+        socket->close();
+    }
+}
+
+void ClientListener::remove_secure_handshake_timer(IDataSocket* socket_ptr)
+{
+    const auto timer = secure_handshake_timers_.find(socket_ptr);
+    if (timer == secure_handshake_timers_.end()) {
+        return;
+    }
+
+    m_events->remove_handler(EventType::TIMER, socket_ptr->get_event_target());
+    m_events->deleteTimer(timer->second);
+    secure_handshake_timers_.erase(timer);
 }
 
 void ClientListener::handle_unknown_client(ClientProxyUnknown* unknownClient)
@@ -213,6 +269,11 @@ ClientListener::cleanupListenSocket()
 void
 ClientListener::cleanupClientSockets()
 {
+    for (const auto& socket : client_sockets_) {
+        m_events->remove_handler(EventType::CLIENT_LISTENER_ACCEPTED,
+                                 socket->get_event_target());
+        remove_secure_handshake_timer(socket.get());
+    }
     client_sockets_.clear();
 }
 

@@ -27,6 +27,7 @@
 namespace inputleap {
 
 struct Ssl;
+enum class TlsRetryDirection;
 
 //! Secure socket
 /*!
@@ -85,6 +86,8 @@ private:
     void handle_tcp_connected(const Event& event);
 
     void freeSSLResources();
+    bool retryWantsRead() const;
+    bool retryWantsWrite() const;
 
 private:
     // all accesses to m_ssl must be protected by this mutex. The only function that is called
@@ -101,6 +104,7 @@ private:
     int secure_connect_retry_ = 0; // used only in secureConnect()
     int secure_read_retry_ = 0; // used only in secureRead()
     int secure_write_retry_ = 0; // used only in secureWrite()
+    TlsRetryDirection tls_retry_direction_;
 
     // The following are used only from doWrite()
     // FIXME: using std::vector would simplify logic significantly.

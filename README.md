@@ -2,6 +2,44 @@
 
 <!-- add badges: flatpak, snap, GitHub Actions -->
 
+### Secure fork development
+
+This fork currently requires TLS 1.2 or newer, restricts TLS 1.2 to
+forward-secret AEAD cipher suites, disables TLS compression and renegotiation,
+and enables mutual certificate authentication by default for new profiles. It
+also bounds concurrent pre-authentication TLS handshakes, expires stalled
+handshakes, rejects invalid packet lengths, and carries additional Windows
+correctness fixes.
+
+After installing Visual Studio 2022 Build Tools and placing Qt, OpenSSL, and
+Bonjour SDK dependencies under `.deps`, build, test, and stage a runnable
+Windows package with:
+
+```powershell
+.\scripts\build-windows.ps1 -Configuration Debug
+```
+
+Use `-Configuration Release` for an optimized package. The staged application
+is written to `out\install\windows-<configuration>`.
+
+See [the performance measurement guide](doc/performance.md) to collect p50,
+p95, and p99 input-pipeline baselines without changing the network protocol.
+For a reproducible serializer microbenchmark, run:
+
+```powershell
+.\scripts\benchmark-protocol.ps1 -Configuration Release
+```
+
+See [the fork security model](doc/security.md) for the implemented controls,
+trust assumptions, and remaining hardening work.
+
+The fork also supports materializing macOS browser images and HTTP(S) links as
+files on a Windows peer during a cross-screen drag. Matching fork peers
+negotiate a bounded streaming transfer protocol with per-file SHA-256
+verification and recursive folder support. See the
+[cross-platform drag-and-drop guide](doc/cross-platform-drag-drop.md) and
+[transfer-v2 protocol notes](doc/transfer-v2.md).
+
 ### Contact info:
 
 - `#inputleap` on LiberaChat IRC network, for support with Input Leap.
