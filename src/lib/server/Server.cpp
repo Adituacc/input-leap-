@@ -1775,9 +1775,9 @@ bool Server::onMouseMovePrimary(std::int32_t x, std::int32_t y)
 				&& m_waitDragInfoThread) {
 				if (m_sendDragInfoThread == nullptr) {
                     m_sendDragInfoThread = new Thread(
-                        [this, newScreen, x, y]()
+                        [this, newScreen, edgeX = xc, edgeY = yc]()
                         {
-                            send_drag_info_thread(newScreen, x, y);
+                            send_drag_info_thread(newScreen, edgeX, edgeY);
                         });
 				}
 
