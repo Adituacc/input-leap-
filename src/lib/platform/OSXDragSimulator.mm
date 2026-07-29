@@ -127,18 +127,12 @@ fakeDraggingPaths(
 		[g_dragView clearDropTarget];
 		[g_dragView setDragPaths:retainedPaths];
 
-		CGEventSourceRef source =
-			CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
-		CGEventRef down = CGEventCreateMouseEvent(
-			source, kCGEventLeftMouseDown, CGPointMake(cursorX, cursorY),
-			kCGMouseButtonLeft);
-		CGEventPost(kCGHIDEventTap, down);
-		CFRelease(down);
-
 		if (releaseImmediately) {
 			dispatch_after(
 				dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC),
 				dispatch_get_main_queue(), ^{
+					CGEventSourceRef source =
+						CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
 					CGEventRef up = CGEventCreateMouseEvent(
 						source, kCGEventLeftMouseUp,
 						CGPointMake(cursorX, cursorY), kCGMouseButtonLeft);
@@ -147,9 +141,22 @@ fakeDraggingPaths(
 					CFRelease(source);
 				});
 		}
-		else {
-			CFRelease(source);
-		}
+
+		// Calling the view directly avoids relying on a global Quartz
+		// mouse-down hit-test against the tiny hidden window. The AppKit drag
+		// loop still receives the real remote mouse movement and mouse-up
+		// events after it starts.
+		NSEvent* down = [NSEvent
+			mouseEventWithType:NSLeftMouseDown
+					 location:NSMakePoint(1, 1)
+				modifierFlags:0
+					timestamp:[[NSProcessInfo processInfo] systemUptime]
+				 windowNumber:[g_dragWindow windowNumber]
+					  context:nil
+				  eventNumber:0
+				   clickCount:1
+					 pressure:1.0];
+		[g_dragView mouseDown:down];
 		[retainedPaths release];
 	});
 }
