@@ -4,18 +4,17 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>English</string>
     <key>CFBundleDisplayName</key>
-    <string>InputLeap</string>
+    <string>InputLeap DragDrop</string>
     <key>CFBundleExecutable</key>
     <string>input-leap</string>
     <key>CFBundleIconFile</key>
     <string>InputLeap.icns</string>
     <key>CFBundleIdentifier</key>
-    <string>input-leap</string>
-    <!-- TODO: Fix this in v2.0 //-->
+    <string>io.github.inputleap.dragdrop</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>InputLeap</string>
+    <string>InputLeap DragDrop</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleSignature</key>
