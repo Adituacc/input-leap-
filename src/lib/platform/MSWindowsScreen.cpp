@@ -1956,57 +1956,19 @@ std::string MSWindowsScreen::create_drag_staging_directory() const
     return {};
 }
 
-bool MSWindowsScreen::preserve_cancelled_drag(
-    const std::vector<std::string>& paths,
-    const std::string& staging_directory) const
-{
-    PWSTR downloads_path = nullptr;
-    if (FAILED(SHGetKnownFolderPath(
-            FOLDERID_Downloads, KF_FLAG_CREATE, nullptr, &downloads_path))) {
-        LOG_WARN("cancelled native drag remains staged at: %s",
-                 staging_directory.c_str());
-        return false;
-    }
-
-    const fs::path downloads(downloads_path);
-    CoTaskMemFree(downloads_path);
-    bool all_preserved = true;
-    for (const auto& value : paths) {
-        const fs::path source = fs::u8path(value);
-        fs::path target = downloads / source.filename();
-        std::error_code error;
-        for (unsigned suffix = 1; fs::exists(target) && suffix < 10000; ++suffix) {
-            target = downloads /
-                fs::u8path(source.stem().u8string() + " (" +
-                           std::to_string(suffix) + ")" +
-                           source.extension().u8string());
-        }
-        fs::rename(source, target, error);
-        if (error) {
-            all_preserved = false;
-            LOG_WARN("could not preserve cancelled drag item \"%s\": %s",
-                     value.c_str(), error.message().c_str());
-        }
-        else {
-            LOG_INFO("preserved cancelled drag item in Downloads: %s",
-                     target.u8string().c_str());
-        }
-    }
-    return all_preserved;
-}
-
 void MSWindowsScreen::start_native_destination_drag(
     std::vector<std::string> paths)
 {
     const auto staging_directory = m_dropTargetPath;
     const bool dropped = MSWindowsDragSource::drag_files(
         paths, [this]() { return m_leftButtonDown.load(); });
-    const bool preserved =
-        !dropped && preserve_cancelled_drag(paths, staging_directory);
 
     std::error_code error;
-    if (!staging_directory.empty() && (dropped || preserved)) {
+    if (!staging_directory.empty()) {
         fs::remove_all(fs::u8path(staging_directory), error);
+    }
+    if (!dropped) {
+        LOG_INFO("discarded cancelled Windows destination drag");
     }
     m_dropTargetPath.clear();
     m_fakeDraggingStarted = false;

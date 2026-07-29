@@ -142,7 +142,18 @@ std::string materialize_image(NSPasteboard* pasteboard)
 
     data = [pasteboard dataForType:NSTIFFPboardType];
     if (data != nil) {
-        return write_payload(data, "Dragged Image.tiff");
+        // Browser and screenshot drags commonly expose only TIFF on macOS.
+        // Normalize it because many Windows web-app drop zones silently
+        // ignore TIFF even after accepting the native OLE file drop.
+        NSBitmapImageRep* image = [NSBitmapImageRep imageRepWithData:data];
+        if (image != nil) {
+            NSData* png = [image representationUsingType:NSBitmapImageFileTypePNG
+                                               properties:@{}];
+            if (png != nil) {
+                return write_payload(png, "Dragged Image.png");
+            }
+        }
+        LOG_WARN("failed to convert dragged TIFF payload to PNG");
     }
     return {};
 }

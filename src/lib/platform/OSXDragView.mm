@@ -42,7 +42,17 @@ initWithFrame:(NSRect)frame
 	self = [super initWithFrame:frame];
 	m_dropTarget = [[NSMutableString alloc] initWithCapacity:0];
 	m_dragFileExt = [[NSMutableString alloc] initWithCapacity:0];
+	m_dragPaths = [[NSArray alloc] init];
     return self;
+}
+
+- (void)
+dealloc
+{
+	[m_dropTarget release];
+	[m_dragFileExt release];
+	[m_dragPaths release];
+	[super dealloc];
 }
 
 - (void)
@@ -69,6 +79,56 @@ mouseDown:(NSEvent *)theEvent
 	dragPosition.y -= 16;
 	imageLocation.origin = dragPosition;
 	imageLocation.size = NSMakeSize(32,32);
+
+	if ([m_dragPaths count] > 0) {
+		NSMutableArray* draggingItems =
+			[NSMutableArray arrayWithCapacity:[m_dragPaths count]];
+		NSInteger offset = 0;
+		for (NSString* path in m_dragPaths) {
+			id<NSPasteboardWriting> writer =
+				[NSURL fileURLWithPath:path isDirectory:NO];
+
+			// Internet shortcuts should behave like native web URLs when
+			// dropped into browsers, editors, and Finder.
+			if ([[[path pathExtension] lowercaseString]
+					isEqualToString:@"url"]) {
+				NSString* shortcut =
+					[NSString stringWithContentsOfFile:path
+											 encoding:NSUTF8StringEncoding
+												error:nil];
+				for (NSString* line in
+						[shortcut componentsSeparatedByCharactersInSet:
+							[NSCharacterSet newlineCharacterSet]]) {
+					if ([line hasPrefix:@"URL="]) {
+						NSURL* remote =
+							[NSURL URLWithString:[line substringFromIndex:4]];
+						if (remote != nil) {
+							writer = remote;
+						}
+						break;
+					}
+				}
+			}
+
+			NSDraggingItem* item =
+				[[NSDraggingItem alloc] initWithPasteboardWriter:writer];
+			NSImage* image = [[NSWorkspace sharedWorkspace] iconForFile:path];
+			[image setSize:NSMakeSize(32, 32)];
+			NSRect frame = imageLocation;
+			frame.origin.x += offset;
+			frame.origin.y -= offset;
+			[item setDraggingFrame:frame contents:image];
+			[draggingItems addObject:item];
+			[item release];
+			offset += 4;
+		}
+
+		[self beginDraggingSessionWithItems:draggingItems
+									 event:theEvent
+									source:self];
+		return;
+	}
+
 	[self dragPromisedFilesOfTypes:[NSArray arrayWithObject:m_dragFileExt]
 								fromRect:imageLocation
 								  source:self
@@ -113,6 +173,15 @@ setFileExt:(NSString*) ext
 	[m_dragFileExt release];
 	m_dragFileExt = ext;
 	NSLog(@"drag file ext: %@", m_dragFileExt);
+}
+
+- (void)
+setDragPaths:(NSArray*) paths
+{
+	NSArray* replacement =
+		paths == nil ? [[NSArray alloc] init] : [paths copy];
+	[m_dragPaths release];
+	m_dragPaths = replacement;
 }
 
 - (NSWindow *)

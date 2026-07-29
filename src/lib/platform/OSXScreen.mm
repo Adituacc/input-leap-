@@ -36,6 +36,7 @@
 #include "base/Log.h"
 #include "base/IEventQueue.h"
 #include "base/Time.h"
+#include "io/filesystem.h"
 
 #include <math.h>
 #include <mach-o/dyld.h>
@@ -544,7 +545,13 @@ OSXScreen::fakeMouseButton(ButtonID id, bool press)
 
 	if (!press && (id == kButtonLeft)) {
 		if (m_fakeDraggingStarted) {
-            m_getDropTargetThread = new Thread([this](){ get_drop_target_thread(); });
+			if (m_nativeDestinationDrag) {
+				m_fakeDraggingStarted = false;
+				m_nativeDestinationDrag = false;
+			}
+			else {
+				m_destinationButtonReleased = true;
+			}
 		}
 
 		m_draggingStarted = false;
@@ -1149,7 +1156,13 @@ bool OSXScreen::onMouseButton(bool pressed, std::uint16_t macButton)
 		}
 		else {
 			if (m_fakeDraggingStarted) {
-                m_getDropTargetThread = new Thread([this](){ get_drop_target_thread(); });
+				if (m_nativeDestinationDrag) {
+					m_fakeDraggingStarted = false;
+					m_nativeDestinationDrag = false;
+				}
+				else {
+					m_destinationButtonReleased = true;
+				}
 			}
 
 			m_draggingStarted = false;
@@ -1988,21 +2001,59 @@ OSXScreen::CFStringRefToUTF8String(CFStringRef aString)
 void
 OSXScreen::fakeDraggingFiles(DragFileList fileList)
 {
-	m_fakeDraggingStarted = true;
-    if (!m_dropTargetConfigured) {
-        m_dropTarget.clear();
+	if (fileList.empty()) {
+		return;
     }
-    std::string fileExt;
-	if (!fileList.empty()) {
-		fileExt = DragInformation::getDragFileExtension(
-			fileList.at(0).getFilename());
-        if (fileExt.empty()) {
-            fileExt = "data";
-        }
+
+	std::vector<std::string> materializedPaths;
+	materializedPaths.reserve(fileList.size());
+	for (const auto& item : fileList) {
+		const auto& path = item.getFilename();
+		if (fs::u8path(path).is_absolute() &&
+			DragInformation::isFileValid(path)) {
+			materializedPaths.push_back(path);
+		}
 	}
 
+	if (materializedPaths.empty()) {
+		if (!m_dropTargetConfigured) {
+			NSString* root = [NSTemporaryDirectory()
+				stringByAppendingPathComponent:@"InputLeapIncomingDrags"];
+			NSString* directory = [root
+				stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
+			NSError* error = nil;
+			if (![[NSFileManager defaultManager]
+					createDirectoryAtPath:directory
+			 withIntermediateDirectories:YES
+							  attributes:nil
+								   error:&error]) {
+				LOG_ERR("failed to create macOS drag staging directory: %s",
+						[[error localizedDescription] UTF8String]);
+				m_fakeDraggingStarted = false;
+				return;
+			}
+			m_dropTarget = [directory UTF8String];
+			LOG_INFO("staging incoming macOS drag at: %s",
+					 m_dropTarget.c_str());
+		}
+		m_destinationButtonReleased = false;
+		m_nativeDestinationDrag = false;
+		m_fakeDraggingStarted = true;
+		return;
+	}
+
+	if (m_dropTargetConfigured) {
+		m_fakeDraggingStarted = false;
+		return;
+	}
+
+	m_nativeDestinationDrag = true;
+	m_fakeDraggingStarted = true;
+
 #if defined(MAC_OS_X_VERSION_10_7)
-	fakeDragging(fileExt.c_str(), m_xCursor, m_yCursor);
+	fakeDraggingPaths(
+		materializedPaths, m_xCursor, m_yCursor,
+		m_destinationButtonReleased);
 #else
 	LOG_WARN("drag drop not supported");
 #endif
@@ -2046,15 +2097,6 @@ std::vector<std::string> OSXScreen::getDraggingPaths()
 
 const std::string& OSXScreen::getDropTarget() const
 {
-    if (m_dropTarget.empty()) {
-        NSArray* directories = NSSearchPathForDirectoriesInDomains(
-            NSDownloadsDirectory, NSUserDomainMask, YES);
-        if ([directories count] > 0) {
-            m_dropTarget = [[directories objectAtIndex:0] UTF8String];
-            LOG_INFO("using Downloads for macOS drop target: %s",
-                     m_dropTarget.c_str());
-        }
-    }
     return m_dropTarget;
 }
 

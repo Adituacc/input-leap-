@@ -81,6 +81,14 @@ public:
     HRESULT STDMETHODCALLTYPE Drop(
         IDataObject* data_object, DWORD, POINTL, DWORD* effect) override
     {
+        const auto url_format =
+            RegisterClipboardFormatW(L"UniformResourceLocatorW");
+        FORMATETC url_format_descriptor{
+            static_cast<CLIPFORMAT>(url_format), nullptr,
+            DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+        received_url_format_ =
+            SUCCEEDED(data_object->QueryGetData(&url_format_descriptor));
+
         FORMATETC format{
             CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
         STGMEDIUM medium{};
@@ -121,9 +129,15 @@ public:
         return received_path_;
     }
 
+    bool received_url_format() const
+    {
+        return received_url_format_;
+    }
+
 private:
     std::atomic<ULONG> references_{1};
     bool received_ = false;
+    bool received_url_format_ = false;
     std::string received_path_;
 };
 
@@ -160,10 +174,10 @@ TEST(MSWindowsDragSourceTests, dragFiles_releaseOverWindow_dropsAtCursor)
     ASSERT_TRUE(SUCCEEDED(RegisterDragDrop(window, target)));
 
     const auto test_path =
-        fs::temp_directory_path() / fs::u8path("inputleap-native-drag-test.txt");
+        fs::temp_directory_path() / fs::u8path("inputleap-native-drag-test.url");
     {
         std::ofstream stream(test_path, std::ios::binary | std::ios::trunc);
-        stream << "native destination drag test";
+        stream << "[InternetShortcut]\r\nURL=https://example.com/\r\n";
     }
 
     SetForegroundWindow(window);
@@ -191,6 +205,7 @@ TEST(MSWindowsDragSourceTests, dragFiles_releaseOverWindow_dropsAtCursor)
 
     EXPECT_TRUE(dropped);
     EXPECT_TRUE(target->received());
+    EXPECT_TRUE(target->received_url_format());
     EXPECT_TRUE(fs::equivalent(test_path, fs::u8path(target->received_path())));
 
     RevokeDragDrop(window);

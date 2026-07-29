@@ -21,11 +21,17 @@
 
 #import <CoreFoundation/CoreFoundation.h>
 
+#include <string>
+#include <vector>
+
 namespace inputleap {
 
 void runCocoaApp();
 void stopCocoaLoop();
 void fakeDragging(const char* str, int cursorX, int cursorY);
+void fakeDraggingPaths(
+    const std::vector<std::string>& paths, int cursorX, int cursorY,
+    bool releaseImmediately);
 CFStringRef getCocoaDropTarget();
 
 } // namespace inputleap

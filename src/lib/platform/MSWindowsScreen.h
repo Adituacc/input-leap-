@@ -231,9 +231,6 @@ private: // HACK
     void send_drag_thread();
     void start_native_destination_drag(std::vector<std::string> paths);
     std::string create_drag_staging_directory() const;
-    bool preserve_cancelled_drag(
-        const std::vector<std::string>& paths,
-        const std::string& staging_directory) const;
 
 private:
     struct HotKeyItem {

@@ -23,11 +23,13 @@
 {
     NSMutableString* m_dropTarget;
     NSString* m_dragFileExt;
+    NSArray* m_dragPaths;
 }
 
 - (CFStringRef)getDropTarget;
 - (void)clearDropTarget;
 - (void)setFileExt:(NSString*) ext;
+- (void)setDragPaths:(NSArray*) paths;
 
 @end
 

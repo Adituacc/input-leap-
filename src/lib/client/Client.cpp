@@ -838,7 +838,7 @@ void Client::handleTransferV2Frame(const TransferFrame& frame)
     for (const auto& path : completed) {
         LOG_INFO("completed transfer-v2 item \"%s\"", path.u8string().c_str());
     }
-#if defined(SYSAPI_WIN32)
+#if defined(SYSAPI_WIN32) || defined(SYSAPI_OSX)
     if (!completed.empty() && m_nativeDragReceivePending) {
         DragFileList materialized_files;
         materialized_files.reserve(completed.size());

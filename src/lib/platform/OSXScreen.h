@@ -346,6 +346,8 @@ private:
     Thread* m_getDropTargetThread;
     mutable std::string m_dropTarget;
     bool m_dropTargetConfigured = false;
+    bool m_nativeDestinationDrag = false;
+    bool m_destinationButtonReleased = false;
 
 #if defined(MAC_OS_X_VERSION_10_7)
     mutable std::mutex carbon_loop_mutex_;

@@ -87,10 +87,70 @@ fakeDragging(const char* str, int cursorX, int cursorY)
 	[NSApp activateIgnoringOtherApps:YES];
 
 	[g_dragView clearDropTarget];
+	[g_dragView setDragPaths:nil];
 	[g_dragView setFileExt:g_ext];
 
-	CGEventRef down = CGEventCreateMouseEvent(CGEventSourceCreate(kCGEventSourceStateHIDSystemState), kCGEventLeftMouseDown, CGPointMake(cursorX, cursorY), kCGMouseButtonLeft);
+	CGEventSourceRef source =
+		CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+	CGEventRef down = CGEventCreateMouseEvent(
+		source, kCGEventLeftMouseDown, CGPointMake(cursorX, cursorY),
+		kCGMouseButtonLeft);
 	CGEventPost(kCGHIDEventTap, down);
+	CFRelease(down);
+	CFRelease(source);
+	});
+}
+
+void
+fakeDraggingPaths(
+	const std::vector<std::string>& paths, int cursorX, int cursorY,
+	bool releaseImmediately)
+{
+	NSMutableArray* cocoaPaths =
+		[NSMutableArray arrayWithCapacity:paths.size()];
+	for (const auto& path : paths) {
+		NSString* value = [NSString stringWithUTF8String:path.c_str()];
+		if (value != nil) {
+			[cocoaPaths addObject:value];
+		}
+	}
+	NSArray* retainedPaths = [cocoaPaths copy];
+
+	dispatch_async(dispatch_get_main_queue(), ^{
+		NSRect screen = [[NSScreen mainScreen] frame];
+		const int newPosX = cursorX - 1;
+		const int newPosY = screen.size.height - cursorY - 1;
+		[g_dragWindow setFrame:NSMakeRect(newPosX, newPosY, 3, 3)
+					  display:NO];
+		[g_dragWindow makeKeyAndOrderFront:nil];
+		[NSApp activateIgnoringOtherApps:YES];
+		[g_dragView clearDropTarget];
+		[g_dragView setDragPaths:retainedPaths];
+
+		CGEventSourceRef source =
+			CGEventSourceCreate(kCGEventSourceStateHIDSystemState);
+		CGEventRef down = CGEventCreateMouseEvent(
+			source, kCGEventLeftMouseDown, CGPointMake(cursorX, cursorY),
+			kCGMouseButtonLeft);
+		CGEventPost(kCGHIDEventTap, down);
+		CFRelease(down);
+
+		if (releaseImmediately) {
+			dispatch_after(
+				dispatch_time(DISPATCH_TIME_NOW, 50 * NSEC_PER_MSEC),
+				dispatch_get_main_queue(), ^{
+					CGEventRef up = CGEventCreateMouseEvent(
+						source, kCGEventLeftMouseUp,
+						CGPointMake(cursorX, cursorY), kCGMouseButtonLeft);
+					CGEventPost(kCGHIDEventTap, up);
+					CFRelease(up);
+					CFRelease(source);
+				});
+		}
+		else {
+			CFRelease(source);
+		}
+		[retainedPaths release];
 	});
 }
 
