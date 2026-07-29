@@ -1669,13 +1669,20 @@ Server::onMouseUp(ButtonID id)
 	LOG_DEBUG1("onMouseUp id=%d", id);
 	assert(m_active != nullptr);
 
-	// relay
-	m_active->mouseUp(id);
-
+	// Capturing a native drag cancels the source-side OLE/Cocoa session and
+	// synthesizes a button-up. The handoff can switch screens before that
+	// queued event is dispatched. Relaying it would therefore start and
+	// immediately drop the destination-side promised-file drag at the edge.
+	// Consume only this synthetic release; the user's physical release will
+	// arrive afterwards and finish the drag on the destination normally.
 	if (m_ignoreFileTransfer) {
+		LOG_DEBUG("consumed synthetic drag handoff mouse-up");
 		m_ignoreFileTransfer = false;
 		return;
 	}
+
+	// relay
+	m_active->mouseUp(id);
 
 	if (m_args.m_enableDragDrop) {
 		if (!m_screen->isOnScreen()) {
@@ -1884,6 +1891,10 @@ void Server::handle_drag_handoff_ready(const Event& event)
 
         if (!validPaths.empty()) {
             sendFilesToClient(validPaths);
+            // The handoff already owns this transfer. Keep the cached native
+            // paths from starting a duplicate transfer when the user's real
+            // mouse-up completes the destination-side drag.
+            m_screen->clearDraggingFilename();
         }
     }
     catch (const std::exception& error) {
