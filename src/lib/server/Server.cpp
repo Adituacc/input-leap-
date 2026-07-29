@@ -1808,14 +1808,36 @@ void Server::send_drag_info_thread(
     // Capture the payload and complete the transfer explicitly instead of
     // waiting for that consumed event after the screen switch.
     m_ignoreFileTransfer = true;
-    const auto drag_paths = m_screen->getDraggingPaths();
+    std::vector<std::string> drag_paths;
+    try {
+        drag_paths = m_screen->getDraggingPaths();
+    }
+    catch (const std::exception& error) {
+        LOG_ERR("native drag payload capture failed: %s", error.what());
+    }
+    catch (...) {
+        LOG_ERR("native drag payload capture failed: unknown error");
+    }
 
     LOG_INFO("captured %zi dragged item(s) for screen \"%s\"",
              drag_paths.size(), targetScreen.c_str());
-    m_events->add_event(
-        EventType::DRAG_HANDOFF_READY, this,
-        create_event_data<DragHandoffInfo>(DragHandoffInfo{
-            std::move(targetScreen), targetX, targetY, drag_paths}));
+    try {
+        m_events->add_event(
+            EventType::DRAG_HANDOFF_READY, this,
+            create_event_data<DragHandoffInfo>(DragHandoffInfo{
+                std::move(targetScreen), targetX, targetY,
+                std::move(drag_paths)}));
+    }
+    catch (const std::exception& error) {
+        LOG_ERR("failed to queue drag handoff: %s", error.what());
+        m_waitDragInfoThread = false;
+        m_sendDragInfoThread = nullptr;
+    }
+    catch (...) {
+        LOG_ERR("failed to queue drag handoff: unknown error");
+        m_waitDragInfoThread = false;
+        m_sendDragInfoThread = nullptr;
+    }
 }
 
 void Server::handle_drag_handoff_ready(const Event& event)
@@ -1835,25 +1857,42 @@ void Server::handle_drag_handoff_ready(const Event& event)
     }
 
     m_dragFileList.clear();
+    std::vector<std::string> validPaths;
     for (const auto& path : info.paths) {
+        if (!DragInformation::isFileValid(path)) {
+            LOG_ERR("captured drag item is no longer available: %s",
+                    path.c_str());
+            continue;
+        }
+        validPaths.push_back(path);
         DragInformation item;
         item.setFilename(path);
         m_dragFileList.push_back(std::move(item));
     }
 
-    if (!m_dragFileList.empty()) {
-        sendDragInfo(target->second);
-    }
-    else {
-        LOG_ERR("native drag payload could not be captured");
-    }
+    try {
+        if (!m_dragFileList.empty()) {
+            sendDragInfo(target->second);
+        }
+        else {
+            LOG_ERR("native drag payload could not be captured");
+        }
 
-    LOG_INFO("completing drag handoff to \"%s\"", info.screen.c_str());
-    switchScreen(target->second, info.x, info.y, false);
-    m_waitDragInfoThread = true;
+        LOG_INFO("completing drag handoff to \"%s\"", info.screen.c_str());
+        switchScreen(target->second, info.x, info.y, false);
+        m_waitDragInfoThread = true;
 
-    if (!info.paths.empty()) {
-        sendFilesToClient(info.paths);
+        if (!validPaths.empty()) {
+            sendFilesToClient(validPaths);
+        }
+    }
+    catch (const std::exception& error) {
+        LOG_ERR("drag handoff failed: %s", error.what());
+        m_waitDragInfoThread = true;
+    }
+    catch (...) {
+        LOG_ERR("drag handoff failed: unknown error");
+        m_waitDragInfoThread = true;
     }
     m_dragFileList.clear();
 }
@@ -2313,12 +2352,29 @@ void Server::on_transfer_frame_sending(const TransferFrameInfo& info)
 {
     const auto target = m_clients.find(info.screen);
     if (target == m_clients.end()) {
-        throw std::runtime_error("transfer target disconnected");
+        LOG_ERR("transfer target \"%s\" disconnected", info.screen.c_str());
+        m_transferSendProgress.cancel();
+        return;
     }
     if (!target->second->supportsTransferV2()) {
-        throw std::runtime_error("transfer target does not support transfer-v2");
+        LOG_ERR("transfer target \"%s\" does not support transfer-v2",
+                info.screen.c_str());
+        m_transferSendProgress.cancel();
+        return;
     }
-    target->second->transfer_frame_sending(info.frame);
+    try {
+        target->second->transfer_frame_sending(info.frame);
+    }
+    catch (const std::exception& error) {
+        LOG_ERR("failed writing transfer frame to \"%s\": %s",
+                info.screen.c_str(), error.what());
+        m_transferSendProgress.cancel();
+    }
+    catch (...) {
+        LOG_ERR("failed writing transfer frame to \"%s\": unknown error",
+                info.screen.c_str());
+        m_transferSendProgress.cancel();
+    }
 }
 
 void Server::send_file_thread(
@@ -2353,9 +2409,12 @@ void Server::send_file_thread(
             StreamChunker::sendFile(filenames.front().c_str(), m_events, this);
         }
 	}
-	catch (std::runtime_error &error) {
+	catch (const std::exception& error) {
 		LOG_ERR("failed sending file chunks, error: %s", error.what());
 	}
+    catch (...) {
+        LOG_ERR("failed sending file chunks: unknown error");
+    }
 
 	m_sendFileThread = nullptr;
 }
@@ -2381,6 +2440,19 @@ void Server::handleTransferV2Frame(const TransferFrame& frame)
     }
     if (!completed.empty()) {
         m_events->add_event(EventType::TRANSFER_V2_RECEIVE_COMPLETED, this);
+    }
+}
+
+void Server::cancelTransfer() noexcept
+{
+    try {
+        m_transferReceiver.cancel();
+    }
+    catch (const std::exception& error) {
+        LOG_ERR("failed cleaning up partial transfer: %s", error.what());
+    }
+    catch (...) {
+        LOG_ERR("failed cleaning up partial transfer: unknown error");
     }
 }
 

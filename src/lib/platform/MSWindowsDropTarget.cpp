@@ -19,6 +19,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <utility>
 #include <vector>
 
@@ -329,11 +330,24 @@ MSWindowsDropTarget& MSWindowsDropTarget::instance()
 HRESULT MSWindowsDropTarget::DragEnter(
     IDataObject* dataObject, DWORD, POINTL, DWORD* effect)
 {
-    m_allowDrop = queryDataObject(dataObject);
-    if (m_allowDrop) {
-        auto paths = get_drop_data(dataObject);
-        LOG_INFO("Windows native drag capture received %zi item(s)", paths.size());
-        setDraggingPaths(std::move(paths));
+    try {
+        m_allowDrop = queryDataObject(dataObject);
+        if (m_allowDrop) {
+            auto paths = get_drop_data(dataObject);
+            LOG_INFO("Windows native drag capture received %zi item(s)",
+                     paths.size());
+            setDraggingPaths(std::move(paths));
+        }
+    }
+    catch (const std::exception& error) {
+        m_allowDrop = false;
+        setDraggingPaths({});
+        LOG_ERR("Windows native drag capture failed: %s", error.what());
+    }
+    catch (...) {
+        m_allowDrop = false;
+        setDraggingPaths({});
+        LOG_ERR("Windows native drag capture failed: unknown error");
     }
     *effect = m_allowDrop ? DROPEFFECT_COPY : DROPEFFECT_NONE;
     return S_OK;

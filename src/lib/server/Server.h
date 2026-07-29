@@ -169,6 +169,7 @@ public:
     //! Received dragging information from client
     void dragInfoReceived(std::uint32_t fileNum, std::string content);
     void handleTransferV2Frame(const TransferFrame& frame);
+    void cancelTransfer() noexcept;
 
     //! Store ClientListener pointer
     void setListener(ClientListener* p) { m_clientListener = p; }

@@ -186,6 +186,27 @@ void ClientProxy1_6::handle_data()
             disconnect();
             return;
         }
+        catch (const std::exception& e) {
+            // Transfer and native drag payload errors are recoverable protocol
+            // failures. Do not let them escape the event-loop thread and abort
+            // the entire server process.
+            LOG_ERR("failed handling message from client \"%s\": %s",
+                    getName().c_str(), e.what());
+            if (m_server != nullptr) {
+                m_server->cancelTransfer();
+            }
+            disconnect();
+            return;
+        }
+        catch (...) {
+            LOG_ERR("failed handling message from client \"%s\": unknown error",
+                    getName().c_str());
+            if (m_server != nullptr) {
+                m_server->cancelTransfer();
+            }
+            disconnect();
+            return;
+        }
 
         // next message
         n = getStream()->read(code, 4);
