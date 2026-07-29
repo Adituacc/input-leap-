@@ -1,0 +1,1 @@
+Fixed macOS-to-client drag-and-drop getting stuck at the screen edge while the native drag payload is prepared.

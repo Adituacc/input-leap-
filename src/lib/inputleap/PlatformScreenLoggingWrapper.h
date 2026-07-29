@@ -25,6 +25,7 @@ class PlatformScreenLoggingWrapper : public IPlatformScreen
 {
 public:
     PlatformScreenLoggingWrapper(std::unique_ptr<IPlatformScreen> screen);
+    IPlatformScreen* wrapped_screen() const { return screen_.get(); }
 
     // IPlatformScreen
     void enable() override;

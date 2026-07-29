@@ -440,8 +440,14 @@ ClientApp::mainLoop()
     Thread thread([this](){ run_events_loop(); });
 
     // wait until carbon loop is ready
-    OSXScreen* screen = dynamic_cast<OSXScreen*>(
-        m_clientScreen->getPlatformScreen());
+    IPlatformScreen* platform_screen = m_clientScreen->getPlatformScreen();
+    if (auto* wrapper = dynamic_cast<PlatformScreenLoggingWrapper*>(platform_screen)) {
+        platform_screen = wrapper->wrapped_screen();
+    }
+    OSXScreen* screen = dynamic_cast<OSXScreen*>(platform_screen);
+    if (screen == nullptr) {
+        throw std::runtime_error("macOS client screen has an unexpected platform type");
+    }
     screen->waitForCarbonLoop();
 
     runCocoaApp();

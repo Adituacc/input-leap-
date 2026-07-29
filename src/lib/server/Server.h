@@ -370,7 +370,8 @@ private:
     void write_to_drop_dir_thread();
 
     // thread function for sending drag information
-    void send_drag_info_thread(BaseClientProxy* newScreen);
+    void send_drag_info_thread(
+        BaseClientProxy* newScreen, std::int32_t edgeX, std::int32_t edgeY);
 
     // send drag info to new client screen
     void sendDragInfo(BaseClientProxy* newScreen);

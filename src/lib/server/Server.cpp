@@ -1774,8 +1774,11 @@ bool Server::onMouseMovePrimary(std::int32_t x, std::int32_t y)
 				&& m_active != newScreen
 				&& m_waitDragInfoThread) {
 				if (m_sendDragInfoThread == nullptr) {
-                    m_sendDragInfoThread = new Thread([this, newScreen]()
-                                                      { send_drag_info_thread(newScreen); });
+                    m_sendDragInfoThread = new Thread(
+                        [this, newScreen, x, y]()
+                        {
+                            send_drag_info_thread(newScreen, x, y);
+                        });
 				}
 
 				return false;
@@ -1791,7 +1794,8 @@ bool Server::onMouseMovePrimary(std::int32_t x, std::int32_t y)
 	return false;
 }
 
-void Server::send_drag_info_thread(BaseClientProxy* newScreen)
+void Server::send_drag_info_thread(
+    BaseClientProxy* newScreen, std::int32_t edgeX, std::int32_t edgeY)
 {
 	m_dragFileList.clear();
     const auto drag_paths = m_screen->getDraggingPaths();
@@ -1816,6 +1820,15 @@ void Server::send_drag_info_thread(BaseClientProxy* newScreen)
 	}
 	m_waitDragInfoThread = false;
 	m_sendDragInfoThread = nullptr;
+
+    // Reading the native drag payload ends the local drag. At a screen edge
+    // macOS may not report another motion event, so resume the deferred edge
+    // transition explicitly instead of leaving the pointer parked there.
+    m_events->add_event(
+        EventType::PRIMARY_SCREEN_MOTION_ON_PRIMARY,
+        m_primaryClient->get_event_target(),
+        create_event_data<IPlatformScreen::MotionInfo>(
+            IPlatformScreen::MotionInfo{edgeX, edgeY}));
 }
 
 void
