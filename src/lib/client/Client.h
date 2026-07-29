@@ -224,6 +224,7 @@ private:
     TransferProgress m_transferSendProgress;
     TransferProgress m_transferReceiveProgress;
     TransferReceiver m_transferReceiver;
+    bool m_nativeDragReceivePending;
     bool m_useSecureNetwork;
     ClientArgs m_args;
     bool m_enableClipboard;

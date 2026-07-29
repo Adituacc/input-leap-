@@ -6,3 +6,8 @@ capture target before the cursor reaches the screen edge and waited for native
 Windows and macOS payload providers before cancelling the source drag.
 Consumed the synthetic cancellation mouse-up so the destination drag remains
 active until the user releases the physical mouse button.
+Added a native Windows destination drag session backed by private temporary
+staging, so received items follow the cursor into applications instead of
+being silently written to a OneDrive-redirected Desktop.
+Kept the receiving screen locked through the destination drag and forwarded
+Input Leap cursor and button state into the Windows OLE drag loop.

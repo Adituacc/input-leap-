@@ -24,6 +24,7 @@
 #include "inputleap/PlatformScreen.h"
 #include "inputleap/DragInformation.h"
 #include "platform/synwinhk.h"
+#include <atomic>
 #include <map>
 #include <string>
 
@@ -228,6 +229,11 @@ private: // HACK
 
     // send drag info and data back to server
     void send_drag_thread();
+    void start_native_destination_drag(std::vector<std::string> paths);
+    std::string create_drag_staging_directory() const;
+    bool preserve_cancelled_drag(
+        const std::vector<std::string>& paths,
+        const std::string& staging_directory) const;
 
 private:
     struct HotKeyItem {
@@ -312,6 +318,7 @@ private:
 
     // map of button state
     bool m_buttons[NumButtonIDs];
+    std::atomic<bool> m_leftButtonDown;
 
     // the system shows the mouse cursor when an internal display count
     // is >= 0.  this count is maintained per application but there's
@@ -344,6 +351,7 @@ private:
     const int m_dropWindowSize;
 
     Thread* m_sendDragThread;
+    Thread* m_fakeDragThread;
 
     PrimaryKeyDownList m_primaryKeyDownList;
 };

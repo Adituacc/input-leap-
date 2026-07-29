@@ -498,6 +498,7 @@ private:
     TransferProgress m_transferSendProgress;
     TransferProgress m_transferReceiveProgress;
     TransferReceiver m_transferReceiver;
+    bool m_nativeDragReceivePending;
     std::string m_dragFileExt;
     bool m_ignoreFileTransfer;
     bool m_enableClipboard;

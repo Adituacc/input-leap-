@@ -26,6 +26,7 @@ set(sources
 if (BUILD_MSWINDOWS)
     set(mswin_sources
         platform/MSWindowsClipboardTests.cpp
+        platform/MSWindowsDragSourceTests.cpp
         platform/MSWindowsKeyStateTests.cpp
     )
     set(mswin_headers)

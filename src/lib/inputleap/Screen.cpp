@@ -363,6 +363,12 @@ Screen::isOnScreen() const
 bool
 Screen::isLockedToScreen() const
 {
+    // A destination-side native drag must remain on the receiving screen
+    // until its OLE/Cocoa session has processed the user's mouse-up.
+    if (m_enableDragDrop && m_screen->isFakeDraggingStarted()) {
+        return true;
+    }
+
     // check for pressed mouse buttons
     // HACK: commented out as it breaks new drag drop feature
     std::uint32_t buttonID = 0;

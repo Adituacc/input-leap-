@@ -94,6 +94,7 @@ Server::Server(
 	m_sendFileThread(nullptr),
 	m_writeToDropDirThread(nullptr),
     m_transferReceiver(&m_transferReceiveProgress),
+    m_nativeDragReceivePending(false),
 	m_ignoreFileTransfer(false),
 	m_enableClipboard(true),
 	m_maximumClipboardSize(INT_MAX),
@@ -2449,6 +2450,19 @@ void Server::handleTransferV2Frame(const TransferFrame& frame)
     for (const auto& path : completed) {
         LOG_INFO("completed transfer-v2 item \"%s\"", path.u8string().c_str());
     }
+#if defined(SYSAPI_WIN32)
+    if (!completed.empty() && m_nativeDragReceivePending) {
+        DragFileList materialized_files;
+        materialized_files.reserve(completed.size());
+        for (const auto& path : completed) {
+            DragInformation item;
+            item.setFilename(path.u8string());
+            materialized_files.push_back(std::move(item));
+        }
+        m_screen->startDraggingFiles(materialized_files);
+        m_nativeDragReceivePending = false;
+    }
+#endif
     if (!completed.empty()) {
         m_events->add_event(EventType::TRANSFER_V2_RECEIVE_COMPLETED, this);
     }
@@ -2456,6 +2470,7 @@ void Server::handleTransferV2Frame(const TransferFrame& frame)
 
 void Server::cancelTransfer() noexcept
 {
+    m_nativeDragReceivePending = false;
     try {
         m_transferReceiver.cancel();
     }
@@ -2476,6 +2491,7 @@ void Server::dragInfoReceived(std::uint32_t fileNum, std::string content)
 
 	DragInformation::parseDragInfo(m_fakeDragFileList, fileNum, content);
 
+    m_nativeDragReceivePending = true;
 	m_screen->startDraggingFiles(m_fakeDragFileList);
 }
 

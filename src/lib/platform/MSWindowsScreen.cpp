@@ -19,6 +19,7 @@
 
 #include "platform/MSWindowsScreen.h"
 
+#include "platform/MSWindowsDragSource.h"
 #include "platform/MSWindowsDropTarget.h"
 #include "client/Client.h"
 #include "platform/MSWindowsClipboard.h"
@@ -40,11 +41,13 @@
 #include "base/IEventQueue.h"
 #include "base/EventQueueTimer.h"
 #include "base/Time.h"
+#include "io/filesystem.h"
 
 #include <string.h>
 #include <Shlobj.h>
 #include <comutil.h>
 #include <algorithm>
+#include <atomic>
 
 //
 // add backwards compatible multihead support (and suppress bogus warning).
@@ -114,11 +117,14 @@ MSWindowsScreen::MSWindowsScreen(
     m_ownClipboard(false),
     m_desks(nullptr),
     m_keyState(nullptr),
+    m_leftButtonDown(false),
     m_hasMouse(GetSystemMetrics(SM_MOUSEPRESENT) != 0),
     m_showingMouse(false),
     m_events(events),
     m_dropWindow(nullptr),
-    m_dropWindowSize(64)
+    m_dropWindowSize(64),
+    m_sendDragThread(nullptr),
+    m_fakeDragThread(nullptr)
 {
     assert(s_windowInstance != nullptr);
     assert(s_screen == nullptr);
@@ -726,10 +732,14 @@ MSWindowsScreen::fakeMouseButton(ButtonID id, bool press)
     if (id == kButtonLeft) {
         if (press) {
             m_buttons[kButtonLeft] = true;
+            m_leftButtonDown = true;
         }
         else {
             m_buttons[kButtonLeft] = false;
-            m_fakeDraggingStarted = false;
+            m_leftButtonDown = false;
+            if (m_fakeDragThread == nullptr) {
+                m_fakeDraggingStarted = false;
+            }
             m_draggingStarted = false;
         }
     }
@@ -951,6 +961,7 @@ MSWindowsScreen::updateButtons()
     int numButtons               = GetSystemMetrics(SM_CMOUSEBUTTONS);
     m_buttons[kButtonNone]       = false;
     m_buttons[kButtonLeft]       = (GetKeyState(VK_LBUTTON)  < 0);
+    m_leftButtonDown             = m_buttons[kButtonLeft];
     m_buttons[kButtonRight]      = (GetKeyState(VK_RBUTTON)  < 0);
     m_buttons[kButtonMiddle]     = (GetKeyState(VK_MBUTTON)  < 0);
     m_buttons[kButtonExtra0]     = (numButtons >= 4) &&
@@ -1297,6 +1308,7 @@ MSWindowsScreen::onMouseButton(WPARAM wParam, LPARAM lParam)
         if (pressed) {
             m_buttons[button] = true;
             if (button == kButtonLeft) {
+                m_leftButtonDown = true;
                 m_dropTarget->clearDraggingFilename();
                 PlatformScreen::clearDraggingFilename();
                 LOG_DEBUG2("dragging filename is cleared");
@@ -1308,6 +1320,10 @@ MSWindowsScreen::onMouseButton(WPARAM wParam, LPARAM lParam)
                 m_draggingStarted = false;
             }
             if (button == kButtonLeft) {
+                m_leftButtonDown = false;
+                if (m_fakeDragThread == nullptr) {
+                    m_fakeDraggingStarted = false;
+                }
                 hideDragCaptureWindow();
             }
         }
@@ -1873,8 +1889,130 @@ MSWindowsScreen::HotKeyItem::operator<(const HotKeyItem& x) const
 void
 MSWindowsScreen::fakeDraggingFiles(DragFileList fileList)
 {
-    // possible design flaw: this function stops a "not implemented"
-    // exception from being thrown.
+    if (fileList.empty()) {
+        return;
+    }
+
+    std::vector<std::string> materialized_paths;
+    materialized_paths.reserve(fileList.size());
+    for (const auto& item : fileList) {
+        const auto& path = item.getFilename();
+        if (fs::u8path(path).is_absolute() &&
+            DragInformation::isFileValid(path)) {
+            materialized_paths.push_back(path);
+        }
+    }
+
+    if (materialized_paths.empty()) {
+        // The first call carries only names from drag metadata. Receive the
+        // bytes into a private staging directory; a second call with verified
+        // paths starts the real shell drag.
+        m_dropTargetPath = create_drag_staging_directory();
+        m_fakeDraggingStarted = !m_dropTargetPath.empty();
+        if (m_fakeDraggingStarted) {
+            LOG_INFO("staging incoming Windows drag at: %s",
+                     m_dropTargetPath.c_str());
+        }
+        return;
+    }
+
+    if (m_fakeDragThread != nullptr) {
+        LOG_WARN("ignoring overlapping Windows native destination drag");
+        return;
+    }
+
+    m_fakeDraggingStarted = true;
+    m_fakeDragThread = new Thread(
+        [this, paths = std::move(materialized_paths)]() mutable {
+            start_native_destination_drag(std::move(paths));
+        });
+}
+
+std::string MSWindowsScreen::create_drag_staging_directory() const
+{
+    static std::atomic<unsigned long> sequence{0};
+    std::error_code error;
+    const auto root =
+        fs::temp_directory_path() / fs::u8path("InputLeapIncomingDrags");
+    fs::create_directories(root, error);
+    if (error) {
+        LOG_ERR("failed to create incoming drag staging root: %s",
+                error.message().c_str());
+        return {};
+    }
+
+    for (unsigned attempt = 0; attempt < 100; ++attempt) {
+        const auto name =
+            "drag-" + std::to_string(GetCurrentProcessId()) + "-" +
+            std::to_string(GetTickCount64()) + "-" +
+            std::to_string(++sequence);
+        const auto directory = root / fs::u8path(name);
+        error.clear();
+        if (fs::create_directory(directory, error)) {
+            return directory.u8string();
+        }
+    }
+    LOG_ERR("failed to allocate incoming drag staging directory");
+    return {};
+}
+
+bool MSWindowsScreen::preserve_cancelled_drag(
+    const std::vector<std::string>& paths,
+    const std::string& staging_directory) const
+{
+    PWSTR downloads_path = nullptr;
+    if (FAILED(SHGetKnownFolderPath(
+            FOLDERID_Downloads, KF_FLAG_CREATE, nullptr, &downloads_path))) {
+        LOG_WARN("cancelled native drag remains staged at: %s",
+                 staging_directory.c_str());
+        return false;
+    }
+
+    const fs::path downloads(downloads_path);
+    CoTaskMemFree(downloads_path);
+    bool all_preserved = true;
+    for (const auto& value : paths) {
+        const fs::path source = fs::u8path(value);
+        fs::path target = downloads / source.filename();
+        std::error_code error;
+        for (unsigned suffix = 1; fs::exists(target) && suffix < 10000; ++suffix) {
+            target = downloads /
+                fs::u8path(source.stem().u8string() + " (" +
+                           std::to_string(suffix) + ")" +
+                           source.extension().u8string());
+        }
+        fs::rename(source, target, error);
+        if (error) {
+            all_preserved = false;
+            LOG_WARN("could not preserve cancelled drag item \"%s\": %s",
+                     value.c_str(), error.message().c_str());
+        }
+        else {
+            LOG_INFO("preserved cancelled drag item in Downloads: %s",
+                     target.u8string().c_str());
+        }
+    }
+    return all_preserved;
+}
+
+void MSWindowsScreen::start_native_destination_drag(
+    std::vector<std::string> paths)
+{
+    const auto staging_directory = m_dropTargetPath;
+    const bool dropped = MSWindowsDragSource::drag_files(
+        paths, [this]() { return m_leftButtonDown.load(); });
+    const bool preserved =
+        !dropped && preserve_cancelled_drag(paths, staging_directory);
+
+    std::error_code error;
+    if (!staging_directory.empty() && (dropped || preserved)) {
+        fs::remove_all(fs::u8path(staging_directory), error);
+    }
+    m_dropTargetPath.clear();
+    m_fakeDraggingStarted = false;
+    Thread* completed_thread = m_fakeDragThread;
+    m_fakeDragThread = nullptr;
+    delete completed_thread;
 }
 
 std::string& MSWindowsScreen::getDraggingFilename()
