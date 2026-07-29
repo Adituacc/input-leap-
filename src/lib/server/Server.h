@@ -50,6 +50,18 @@ class ClientListener;
 /// This class implements the top-level server algorithms for InputLeap.
 class Server : public INode, public EventTarget {
 public:
+    struct DragHandoffInfo {
+        std::string screen;
+        std::int32_t x;
+        std::int32_t y;
+        std::vector<std::string> paths;
+    };
+
+    struct TransferFrameInfo {
+        std::string screen;
+        TransferFrame frame;
+    };
+
     //! Lock cursor to screen data
     class LockCursorToScreenInfo {
     public:
@@ -322,6 +334,7 @@ private:
     void handle_fake_input_end_event();
     void handle_file_chunk_sending_event(const Event& event);
     void handle_file_receive_completed_event(const Event& event);
+    void handle_drag_handoff_ready(const Event& event);
 
     // event processing
     void onClipboardChanged(BaseClientProxy* sender, ClipboardID id, std::uint32_t seqNum);
@@ -337,7 +350,7 @@ private:
     void onMouseMoveSecondary(std::int32_t dx, std::int32_t dy);
     void onMouseWheel(std::int32_t xDelta, std::int32_t yDelta);
     void on_file_chunk_sending(const FileChunk& chunk);
-    void on_transfer_frame_sending(const TransferFrame& frame);
+    void on_transfer_frame_sending(const TransferFrameInfo& info);
     void onFileReceiveCompleted();
 
     // add client to list and attach event handlers for client
@@ -364,14 +377,16 @@ private:
     void forceLeaveClient(BaseClientProxy* client);
 
     // thread function for sending file
-    void send_file_thread(std::vector<std::string> filenames);
+    void send_file_thread(
+        std::vector<std::string> filenames, std::string targetScreen,
+        bool supportsTransferV2);
 
     // thread function for writing file to drop directory
     void write_to_drop_dir_thread();
 
     // thread function for sending drag information
     void send_drag_info_thread(
-        BaseClientProxy* newScreen, std::int32_t edgeX, std::int32_t edgeY);
+        std::string targetScreen, std::int32_t targetX, std::int32_t targetY);
 
     // send drag info to new client screen
     void sendDragInfo(BaseClientProxy* newScreen);

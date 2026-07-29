@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <memory>
 #include <set>
 #include <utility>
 
@@ -178,9 +179,7 @@ std::string dragged_url(NSPasteboard* pasteboard)
     return write_payload(data, filename);
 }
 
-} // namespace
-
-std::vector<std::string> getDraggedFilePaths()
+std::vector<std::string> read_dragged_file_paths()
 {
     NSPasteboard* pasteboard = [NSPasteboard pasteboardWithName:NSDragPboard];
 
@@ -198,6 +197,24 @@ std::vector<std::string> getDraggedFilePaths()
     path = dragged_url(pasteboard);
     return path.empty() ? std::vector<std::string>{}
                         : std::vector<std::string>{std::move(path)};
+}
+
+} // namespace
+
+std::vector<std::string> getDraggedFilePaths()
+{
+    if ([NSThread isMainThread]) {
+        return read_dragged_file_paths();
+    }
+
+    // NSPasteboard data providers are AppKit objects. Reading NSDragPboard from
+    // Input Leap's event or capture thread can return an empty payload on
+    // current macOS releases, especially for Safari and browser drags.
+    auto result = std::make_shared<std::vector<std::string>>();
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        *result = read_dragged_file_paths();
+    });
+    return *result;
 }
 
 std::string getDraggedFilePath()

@@ -100,7 +100,8 @@ public:
     virtual std::string& getDraggingFilename();
     std::vector<std::string> getDraggingPaths() override;
 
-    const std::string& getDropTarget() const { return m_dropTarget; }
+    const std::string& getDropTarget() const override;
+    void setDropTarget(const std::string& target) override;
     void waitForCarbonLoop() const;
 
 protected:
@@ -343,7 +344,8 @@ private:
     IEventQueue* m_events;
 
     Thread* m_getDropTargetThread;
-    std::string m_dropTarget;
+    mutable std::string m_dropTarget;
+    bool m_dropTargetConfigured = false;
 
 #if defined(MAC_OS_X_VERSION_10_7)
     mutable std::mutex carbon_loop_mutex_;

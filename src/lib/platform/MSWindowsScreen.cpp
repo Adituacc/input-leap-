@@ -145,7 +145,12 @@ MSWindowsScreen::MSWindowsScreen(
         OleInitialize(0);
         m_dropWindow = createDropWindow(m_class, "DropWindow");
         m_dropTarget = new MSWindowsDropTarget();
-        RegisterDragDrop(m_dropWindow, m_dropTarget);
+        const auto dragDropResult = RegisterDragDrop(m_dropWindow, m_dropTarget);
+        if (FAILED(dragDropResult)) {
+            LOG_ERR("failed to register native drag capture window: 0x%08x",
+                    dragDropResult);
+            throw XScreenOpenFailure();
+        }
     }
     catch (...) {
         delete m_keyState;
@@ -860,8 +865,12 @@ MSWindowsScreen::createWindow(ATOM windowClass, const char* name) const
 HWND
 MSWindowsScreen::createDropWindow(ATOM windowClass, const char* name) const
 {
-    HWND window = CreateWindowEx(WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_ACCEPTFILES,
-                                 MAKEINTATOM(m_class),
+    // This window must participate in OLE hit testing. WS_EX_TRANSPARENT made
+    // Windows route the native drag to the application behind it, so DragEnter
+    // frequently never supplied Input Leap with the payload.
+    HWND window = CreateWindowEx(WS_EX_TOPMOST | WS_EX_TOOLWINDOW |
+                                     WS_EX_NOACTIVATE | WS_EX_ACCEPTFILES,
+                                 MAKEINTATOM(windowClass),
                                  name,
                                  WS_POPUP,
                                  0, 0, m_dropWindowSize, m_dropWindowSize,
@@ -1862,16 +1871,17 @@ std::vector<std::string> MSWindowsScreen::getDraggingPaths()
             yPos,
             m_dropWindowSize,
             m_dropWindowSize,
-            SWP_SHOWWINDOW);
+            SWP_SHOWWINDOW | SWP_NOACTIVATE);
 
-        // TODO: fake these keys properly
-        inputleap::this_thread_sleep(.05f); // A tiny sleep here makes the DragEnter event on m_dropWindow trigger much more consistently
+        // Give OLE a chance to deliver DragEnter before cancelling the local
+        // drag. The capture callback materializes links and image-only drags.
+        inputleap::this_thread_sleep(.1f);
         fakeKeyDown(kKeyEscape, 8192, 1);
         fakeKeyUp(1);
         fakeMouseButton(kButtonLeft, false);
 
         std::vector<std::string> paths;
-        DOUBLE timeout = inputleap::current_time_seconds() + .5f;
+        DOUBLE timeout = inputleap::current_time_seconds() + 1.0f;
         while (inputleap::current_time_seconds() < timeout) {
             inputleap::this_thread_sleep(.05f);
             paths = m_dropTarget->getDraggingPaths();

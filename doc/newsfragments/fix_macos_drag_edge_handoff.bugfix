@@ -1,1 +1,3 @@
-Fixed macOS-to-client drag-and-drop getting stuck at the screen edge while the native drag payload is prepared.
+Fixed macOS and Windows drag-and-drop getting stuck at the screen edge, losing
+the transfer after the native drag was cancelled, and failing to capture
+browser image or link payloads.

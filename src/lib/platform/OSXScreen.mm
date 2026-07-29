@@ -573,13 +573,17 @@ void OSXScreen::get_drop_target_thread()
 		inputleap::this_thread_sleep(.1f);
 	}
 
-    if (!dropTarget.empty()) {
+	if (!dropTarget.empty()) {
 		LOG_DEBUG("drop target: %s", dropTarget.c_str());
-		m_dropTarget = std::move(dropTarget);
+        if (!m_dropTargetConfigured) {
+		    m_dropTarget = std::move(dropTarget);
+        }
 	}
 	else {
-		LOG_ERR("failed to get drop target");
-		m_dropTarget.clear();
+		LOG_WARN("native macOS drop destination was not selected; using Downloads");
+        if (!m_dropTargetConfigured) {
+		    m_dropTarget.clear();
+        }
 	}
 #else
 	LOG_WARN("drag drop not supported");
@@ -1984,6 +1988,9 @@ void
 OSXScreen::fakeDraggingFiles(DragFileList fileList)
 {
 	m_fakeDraggingStarted = true;
+    if (!m_dropTargetConfigured) {
+        m_dropTarget.clear();
+    }
     std::string fileExt;
 	if (!fileList.empty()) {
 		fileExt = DragInformation::getDragFileExtension(
@@ -2023,6 +2030,26 @@ std::vector<std::string> OSXScreen::getDraggingPaths()
         fakeMouseButton(kButtonLeft, false);
     }
     return PlatformScreen::getDraggingPaths();
+}
+
+const std::string& OSXScreen::getDropTarget() const
+{
+    if (m_dropTarget.empty()) {
+        NSArray* directories = NSSearchPathForDirectoriesInDomains(
+            NSDownloadsDirectory, NSUserDomainMask, YES);
+        if ([directories count] > 0) {
+            m_dropTarget = [[directories objectAtIndex:0] UTF8String];
+            LOG_INFO("using Downloads for macOS drop target: %s",
+                     m_dropTarget.c_str());
+        }
+    }
+    return m_dropTarget;
+}
+
+void OSXScreen::setDropTarget(const std::string& target)
+{
+    m_dropTarget = target;
+    m_dropTargetConfigured = !target.empty();
 }
 
 void

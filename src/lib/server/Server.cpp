@@ -171,7 +171,11 @@ Server::Server(
         m_events->add_handler(EventType::TRANSFER_V2_FRAME_SENDING, this,
                               [this](const auto& e) {
                                   on_transfer_frame_sending(
-                                      e.template get_data_as<TransferFrame>());
+                                      e.template get_data_as<TransferFrameInfo>());
+                              });
+        m_events->add_handler(EventType::DRAG_HANDOFF_READY, this,
+                              [this](const auto& e) {
+                                  handle_drag_handoff_ready(e);
                               });
         m_events->add_handler(EventType::FILE_RECEIVE_COMPLETED, this,
                               [this](const auto& e){ handle_file_receive_completed_event(e); });
@@ -215,6 +219,7 @@ Server::~Server()
     m_events->remove_handler(EventType::PRIMARY_SCREEN_FAKE_INPUT_BEGIN, &input_filter_);
     m_events->remove_handler(EventType::PRIMARY_SCREEN_FAKE_INPUT_END, &input_filter_);
     m_events->remove_handler(EventType::TIMER, this);
+    m_events->remove_handler(EventType::DRAG_HANDOFF_READY, this);
 	stopSwitch();
 
 	// force immediate disconnection of secondary clients
@@ -1774,10 +1779,12 @@ bool Server::onMouseMovePrimary(std::int32_t x, std::int32_t y)
 				&& m_active != newScreen
 				&& m_waitDragInfoThread) {
 				if (m_sendDragInfoThread == nullptr) {
+                    const auto targetScreen = getName(newScreen);
                     m_sendDragInfoThread = new Thread(
-                        [this, newScreen, edgeX = xc, edgeY = yc]()
+                        [this, targetScreen, targetX = x, targetY = y]()
                         {
-                            send_drag_info_thread(newScreen, edgeX, edgeY);
+                            send_drag_info_thread(
+                                targetScreen, targetX, targetY);
                         });
 				}
 
@@ -1795,40 +1802,60 @@ bool Server::onMouseMovePrimary(std::int32_t x, std::int32_t y)
 }
 
 void Server::send_drag_info_thread(
-    BaseClientProxy* newScreen, std::int32_t edgeX, std::int32_t edgeY)
+    std::string targetScreen, std::int32_t targetX, std::int32_t targetY)
 {
-	m_dragFileList.clear();
+    // Cancelling the local native drag can synthesize the only mouse-up event.
+    // Capture the payload and complete the transfer explicitly instead of
+    // waiting for that consumed event after the screen switch.
+    m_ignoreFileTransfer = true;
     const auto drag_paths = m_screen->getDraggingPaths();
-	for (const auto& path : drag_paths) {
-		DragInformation di;
-		di.setFilename(path);
-		m_dragFileList.push_back(di);
-	}
 
-#if defined(__APPLE__)
-	// on mac it seems that after faking a LMB up, system would signal back
-    // to InputLeap a mouse up event, which doesn't happen on windows. as a
-    // result, InputLeap would send dragging file to client twice. This variable
-	// is used to ignore the first file sending.
-	m_ignoreFileTransfer = true;
-#endif
-
-	// send drag file info to client if there is any
-	if (m_dragFileList.size() > 0) {
-		sendDragInfo(newScreen);
-		m_dragFileList.clear();
-	}
-	m_waitDragInfoThread = false;
-	m_sendDragInfoThread = nullptr;
-
-    // Reading the native drag payload ends the local drag. At a screen edge
-    // macOS may not report another motion event, so resume the deferred edge
-    // transition explicitly instead of leaving the pointer parked there.
+    LOG_INFO("captured %zi dragged item(s) for screen \"%s\"",
+             drag_paths.size(), targetScreen.c_str());
     m_events->add_event(
-        EventType::PRIMARY_SCREEN_MOTION_ON_PRIMARY,
-        m_primaryClient->get_event_target(),
-        create_event_data<IPlatformScreen::MotionInfo>(
-            IPlatformScreen::MotionInfo{edgeX, edgeY}));
+        EventType::DRAG_HANDOFF_READY, this,
+        create_event_data<DragHandoffInfo>(DragHandoffInfo{
+            std::move(targetScreen), targetX, targetY, drag_paths}));
+}
+
+void Server::handle_drag_handoff_ready(const Event& event)
+{
+    const auto& info = event.get_data_as<DragHandoffInfo>();
+    m_waitDragInfoThread = false;
+    m_sendDragInfoThread = nullptr;
+
+    const auto target = m_clients.find(info.screen);
+    if (target == m_clients.end()) {
+        LOG_ERR("drag handoff target \"%s\" disconnected", info.screen.c_str());
+        return;
+    }
+    if (m_active != m_primaryClient) {
+        LOG_WARN("drag handoff ignored because the active screen changed");
+        return;
+    }
+
+    m_dragFileList.clear();
+    for (const auto& path : info.paths) {
+        DragInformation item;
+        item.setFilename(path);
+        m_dragFileList.push_back(std::move(item));
+    }
+
+    if (!m_dragFileList.empty()) {
+        sendDragInfo(target->second);
+    }
+    else {
+        LOG_ERR("native drag payload could not be captured");
+    }
+
+    LOG_INFO("completing drag handoff to \"%s\"", info.screen.c_str());
+    switchScreen(target->second, info.x, info.y, false);
+    m_waitDragInfoThread = true;
+
+    if (!info.paths.empty()) {
+        sendFilesToClient(info.paths);
+    }
+    m_dragFileList.clear();
 }
 
 void
@@ -2269,27 +2296,42 @@ Server::sendFilesToClient(const std::vector<std::string>& filenames)
 		StreamChunker::interruptFile();
 	}
 
-    m_sendFileThread =
-        new Thread([this, filenames]() { send_file_thread(filenames); });
-}
-
-void Server::on_transfer_frame_sending(const TransferFrame& frame)
-{
-    assert(m_active != nullptr);
-    if (!m_active->supportsTransferV2()) {
-        throw std::runtime_error("active client does not support transfer-v2");
+    if (m_active == nullptr) {
+        LOG_ERR("cannot transfer dragged items without an active screen");
+        return;
     }
-    m_active->transfer_frame_sending(frame);
+    const auto targetScreen = getName(m_active);
+    const bool supportsTransferV2 = m_active->supportsTransferV2();
+    m_sendFileThread = new Thread(
+        [this, filenames, targetScreen, supportsTransferV2]() {
+            send_file_thread(
+                filenames, targetScreen, supportsTransferV2);
+        });
 }
 
-void Server::send_file_thread(std::vector<std::string> filenames)
+void Server::on_transfer_frame_sending(const TransferFrameInfo& info)
+{
+    const auto target = m_clients.find(info.screen);
+    if (target == m_clients.end()) {
+        throw std::runtime_error("transfer target disconnected");
+    }
+    if (!target->second->supportsTransferV2()) {
+        throw std::runtime_error("transfer target does not support transfer-v2");
+    }
+    target->second->transfer_frame_sending(info.frame);
+}
+
+void Server::send_file_thread(
+    std::vector<std::string> filenames, std::string targetScreen,
+    bool supportsTransferV2)
 {
 	try {
         if (filenames.empty()) {
             throw std::invalid_argument("no drag sources were supplied");
         }
-		LOG_DEBUG("sending %zi dragged item(s) to client", filenames.size());
-        if (m_active != nullptr && m_active->supportsTransferV2()) {
+		LOG_INFO("sending %zi dragged item(s) to \"%s\"",
+                 filenames.size(), targetScreen.c_str());
+        if (supportsTransferV2) {
             std::vector<fs::path> paths;
             paths.reserve(filenames.size());
             for (const auto& filename : filenames) {
@@ -2297,10 +2339,11 @@ void Server::send_file_thread(std::vector<std::string> filenames)
             }
             auto plan = TransferCatalog::plan_from_paths(paths);
             TransferSender sender(&m_transferSendProgress);
-            sender.send(plan, [this](const TransferFrame& frame) {
+            sender.send(plan, [this, targetScreen](const TransferFrame& frame) {
                 m_events->add_event(
                     EventType::TRANSFER_V2_FRAME_SENDING, this,
-                    create_event_data<TransferFrame>(frame));
+                    create_event_data<TransferFrameInfo>(
+                        TransferFrameInfo{targetScreen, frame}));
             });
         }
         else {

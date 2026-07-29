@@ -331,15 +331,17 @@ HRESULT MSWindowsDropTarget::DragEnter(
 {
     m_allowDrop = queryDataObject(dataObject);
     if (m_allowDrop) {
-        setDraggingPaths(get_drop_data(dataObject));
+        auto paths = get_drop_data(dataObject);
+        LOG_INFO("Windows native drag capture received %zi item(s)", paths.size());
+        setDraggingPaths(std::move(paths));
     }
-    *effect = DROPEFFECT_NONE;
+    *effect = m_allowDrop ? DROPEFFECT_COPY : DROPEFFECT_NONE;
     return S_OK;
 }
 
 HRESULT MSWindowsDropTarget::DragOver(DWORD, POINTL, DWORD* effect)
 {
-    *effect = DROPEFFECT_NONE;
+    *effect = m_allowDrop ? DROPEFFECT_COPY : DROPEFFECT_NONE;
     return S_OK;
 }
 
@@ -350,7 +352,7 @@ HRESULT MSWindowsDropTarget::DragLeave()
 
 HRESULT MSWindowsDropTarget::Drop(IDataObject*, DWORD, POINTL, DWORD* effect)
 {
-    *effect = DROPEFFECT_NONE;
+    *effect = m_allowDrop ? DROPEFFECT_COPY : DROPEFFECT_NONE;
     return S_OK;
 }
 

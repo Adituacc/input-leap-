@@ -86,6 +86,7 @@ fakeDragging(const char* str, int cursorX, int cursorY)
 	[g_dragWindow makeKeyAndOrderFront:nil];
 	[NSApp activateIgnoringOtherApps:YES];
 
+	[g_dragView clearDropTarget];
 	[g_dragView setFileExt:g_ext];
 
 	CGEventRef down = CGEventCreateMouseEvent(CGEventSourceCreate(kCGEventSourceStateHIDSystemState), kCGEventLeftMouseDown, CGPointMake(cursorX, cursorY), kCGMouseButtonLeft);
@@ -96,9 +97,15 @@ fakeDragging(const char* str, int cursorX, int cursorY)
 CFStringRef
 getCocoaDropTarget()
 {
-	// HACK: sleep, wait for cocoa drop target updated first
-	usleep(1000000);
-	return [g_dragView getDropTarget];
+	if ([NSThread isMainThread]) {
+		return [g_dragView getDropTarget];
+	}
+
+	__block CFStringRef target = nullptr;
+	dispatch_sync(dispatch_get_main_queue(), ^{
+		target = [g_dragView getDropTarget];
+	});
+	return target;
 }
 
 #endif

@@ -280,6 +280,9 @@ enum class EventType : std::uint32_t {
     /// This event carries a versioned, resumable transfer frame.
     TRANSFER_V2_FRAME_SENDING,
 
+    /// This event completes a deferred native drag capture and screen handoff.
+    DRAG_HANDOFF_READY,
+
     /// This event is sent whenever file has been received.
     FILE_RECEIVE_COMPLETED,
 
