@@ -144,6 +144,8 @@ private:
     HWND createWindow(ATOM windowClass, const char* name) const;
     HWND createDropWindow(ATOM windowClass, const char* name) const;
     void destroyWindow(HWND) const;
+    void showDragCaptureWindow(std::int32_t x, std::int32_t y);
+    void hideDragCaptureWindow();
 
     // convenience function to send events
 public: // HACK

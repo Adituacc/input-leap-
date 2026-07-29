@@ -1053,12 +1053,12 @@ OSXScreen::onMouseMove(CGFloat mx, CGFloat my)
     m_yCursor = (std::int32_t)my;
 
 	if (m_isOnScreen) {
-		// motion on primary screen
-        sendEvent(EventType::PRIMARY_SCREEN_MOTION_ON_PRIMARY,
-                  create_event_data<MotionInfo>(MotionInfo{m_xCursor, m_yCursor}));
 		if (m_buttonState.test(0)) {
 			m_draggingStarted = true;
 		}
+		// motion on primary screen
+        sendEvent(EventType::PRIMARY_SCREEN_MOTION_ON_PRIMARY,
+                  create_event_data<MotionInfo>(MotionInfo{m_xCursor, m_yCursor}));
 	}
 	else {
 		// motion on secondary screen.  warp mouse back to
@@ -1144,6 +1144,7 @@ bool OSXScreen::onMouseButton(bool pressed, std::uint16_t macButton)
 		m_buttonState.set(kButtonLeft - 1, state);
 		if (pressed) {
 			m_draggingFilename.clear();
+            PlatformScreen::clearDraggingFilename();
 			LOG_DEBUG2("dragging file directory is cleared");
 		}
 		else {
@@ -2017,9 +2018,20 @@ std::string& OSXScreen::getDraggingFilename()
 std::vector<std::string> OSXScreen::getDraggingPaths()
 {
     if (m_draggingStarted) {
-        m_draggingPaths = getDraggedFilePaths();
+        m_draggingPaths.clear();
+        const double timeout = inputleap::current_time_seconds() + 1.0;
+        while (m_draggingPaths.empty() &&
+               inputleap::current_time_seconds() < timeout) {
+            m_draggingPaths = getDraggedFilePaths();
+            if (m_draggingPaths.empty()) {
+                inputleap::this_thread_sleep(.05f);
+            }
+        }
         for (const auto& path : m_draggingPaths) {
             LOG_DEBUG("drag payload path: %s", path.c_str());
+        }
+        if (m_draggingPaths.empty()) {
+            LOG_ERR("failed to read the native macOS drag pasteboard");
         }
         m_draggingFilename =
             m_draggingPaths.empty() ? std::string{} : m_draggingPaths.front();

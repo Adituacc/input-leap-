@@ -118,7 +118,7 @@ MSWindowsScreen::MSWindowsScreen(
     m_showingMouse(false),
     m_events(events),
     m_dropWindow(nullptr),
-    m_dropWindowSize(20)
+    m_dropWindowSize(64)
 {
     assert(s_windowInstance != nullptr);
     assert(s_screen == nullptr);
@@ -894,6 +894,29 @@ MSWindowsScreen::destroyWindow(HWND hwnd) const
     }
 }
 
+void MSWindowsScreen::showDragCaptureWindow(std::int32_t x, std::int32_t y)
+{
+    const auto halfSize = m_dropWindowSize / 2;
+    const auto maxX = m_x + (std::max)(0, m_w - m_dropWindowSize);
+    const auto maxY = m_y + (std::max)(0, m_h - m_dropWindowSize);
+    const auto xPos = (std::max)(m_x, (std::min)(x - halfSize, maxX));
+    const auto yPos = (std::max)(m_y, (std::min)(y - halfSize, maxY));
+
+    SetWindowPos(
+        m_dropWindow,
+        HWND_TOPMOST,
+        xPos,
+        yPos,
+        m_dropWindowSize,
+        m_dropWindowSize,
+        SWP_SHOWWINDOW | SWP_NOACTIVATE);
+}
+
+void MSWindowsScreen::hideDragCaptureWindow()
+{
+    ShowWindow(m_dropWindow, SW_HIDE);
+}
+
 void MSWindowsScreen::sendEvent(EventType type, EventDataBase* data)
 {
     m_events->add_event(type, get_event_target(), data);
@@ -1274,7 +1297,8 @@ MSWindowsScreen::onMouseButton(WPARAM wParam, LPARAM lParam)
         if (pressed) {
             m_buttons[button] = true;
             if (button == kButtonLeft) {
-                clearDraggingFilename();
+                m_dropTarget->clearDraggingFilename();
+                PlatformScreen::clearDraggingFilename();
                 LOG_DEBUG2("dragging filename is cleared");
             }
         }
@@ -1282,6 +1306,9 @@ MSWindowsScreen::onMouseButton(WPARAM wParam, LPARAM lParam)
             m_buttons[button] = false;
             if (m_draggingStarted && button == kButtonLeft) {
                 m_draggingStarted = false;
+            }
+            if (button == kButtonLeft) {
+                hideDragCaptureWindow();
             }
         }
     }
@@ -1340,13 +1367,18 @@ bool MSWindowsScreen::onMouseMove(std::int32_t mx, std::int32_t my)
 
     if (m_isOnScreen) {
 
+        if (m_buttons[kButtonLeft] == true && m_draggingStarted == false) {
+            m_draggingStarted = true;
+            // OLE only supplies IDataObject to a registered target that the
+            // native drag actually enters. Arm a small invisible target while
+            // the source still owns the drag, so the next movement can capture
+            // Explorer and browser payloads before the edge handoff begins.
+            showDragCaptureWindow(m_xCursor, m_yCursor);
+        }
+
         // motion on primary screen
         sendEvent(EventType::PRIMARY_SCREEN_MOTION_ON_PRIMARY,
                   create_event_data<MotionInfo>(MotionInfo{m_xCursor, m_yCursor}));
-
-        if (m_buttons[kButtonLeft] == true && m_draggingStarted == false) {
-            m_draggingStarted = true;
-        }
     }
     else
     {
@@ -1855,42 +1887,27 @@ std::string& MSWindowsScreen::getDraggingFilename()
 std::vector<std::string> MSWindowsScreen::getDraggingPaths()
 {
     if (m_draggingStarted) {
-        m_dropTarget->clearDraggingFilename();
         PlatformScreen::clearDraggingFilename();
 
-        int halfSize = m_dropWindowSize / 2;
+        const auto captureX = m_isPrimary ? m_xCursor : m_xCenter;
+        const auto captureY = m_isPrimary ? m_yCursor : m_yCenter;
+        showDragCaptureWindow(captureX, captureY);
 
-        std::int32_t xPos = m_isPrimary ? m_xCursor : m_xCenter;
-        std::int32_t yPos = m_isPrimary ? m_yCursor : m_yCenter;
-        xPos = (xPos - halfSize) < 0 ? 0 : xPos - halfSize;
-        yPos = (yPos - halfSize) < 0 ? 0 : yPos - halfSize;
-        SetWindowPos(
-            m_dropWindow,
-            HWND_TOPMOST,
-            xPos,
-            yPos,
-            m_dropWindowSize,
-            m_dropWindowSize,
-            SWP_SHOWWINDOW | SWP_NOACTIVATE);
+        // The capture window is armed on the first drag movement. Wait for its
+        // OLE DragEnter callback before cancelling the native source drag.
+        // Cancelling first destroys IDataObject and always produces an empty
+        // payload at the screen edge.
+        auto paths = m_dropTarget->getDraggingPaths();
+        DOUBLE timeout = inputleap::current_time_seconds() + 1.0f;
+        while (paths.empty() && inputleap::current_time_seconds() < timeout) {
+            inputleap::this_thread_sleep(.05f);
+            paths = m_dropTarget->getDraggingPaths();
+        }
 
-        // Give OLE a chance to deliver DragEnter before cancelling the local
-        // drag. The capture callback materializes links and image-only drags.
-        inputleap::this_thread_sleep(.1f);
         fakeKeyDown(kKeyEscape, 8192, 1);
         fakeKeyUp(1);
         fakeMouseButton(kButtonLeft, false);
-
-        std::vector<std::string> paths;
-        DOUBLE timeout = inputleap::current_time_seconds() + 1.0f;
-        while (inputleap::current_time_seconds() < timeout) {
-            inputleap::this_thread_sleep(.05f);
-            paths = m_dropTarget->getDraggingPaths();
-            if (!paths.empty()) {
-                break;
-            }
-        }
-
-        ShowWindow(m_dropWindow, SW_HIDE);
+        hideDragCaptureWindow();
 
         for (const auto& path : paths) {
             if (DragInformation::isFileValid(path)) {

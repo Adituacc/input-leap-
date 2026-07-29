@@ -1,4 +1,6 @@
 Fixed macOS and Windows drag-and-drop getting stuck at the screen edge, losing
 the transfer after the native drag was cancelled, and failing to capture
 browser image or link payloads. Prevented malformed or interrupted drag
-transfers from terminating the Windows server process.
+transfers from terminating the Windows server process. Armed the Windows OLE
+capture target before the cursor reaches the screen edge and waited for native
+Windows and macOS payload providers before cancelling the source drag.
