@@ -81,51 +81,55 @@ mouseDown:(NSEvent *)theEvent
 	imageLocation.size = NSMakeSize(32,32);
 
 	if ([m_dragPaths count] > 0) {
-		NSMutableArray* draggingItems =
-			[NSMutableArray arrayWithCapacity:[m_dragPaths count]];
-		NSInteger offset = 0;
-		for (NSString* path in m_dragPaths) {
-			id<NSPasteboardWriting> writer =
-				[NSURL fileURLWithPath:path isDirectory:NO];
+		NSPasteboard* pasteboard =
+			[NSPasteboard pasteboardWithName:NSDragPboard];
+		NSMutableArray* types =
+			[NSMutableArray arrayWithObject:NSFilenamesPboardType];
+		NSString* draggedURL = nil;
+		NSString* firstPath = [m_dragPaths objectAtIndex:0];
 
-			// Internet shortcuts should behave like native web URLs when
-			// dropped into browsers, editors, and Finder.
-			if ([[[path pathExtension] lowercaseString]
-					isEqualToString:@"url"]) {
-				NSString* shortcut =
-					[NSString stringWithContentsOfFile:path
-											 encoding:NSUTF8StringEncoding
-												error:nil];
-				for (NSString* line in
-						[shortcut componentsSeparatedByCharactersInSet:
-							[NSCharacterSet newlineCharacterSet]]) {
-					if ([line hasPrefix:@"URL="]) {
-						NSURL* remote =
-							[NSURL URLWithString:[line substringFromIndex:4]];
-						if (remote != nil) {
-							writer = remote;
-						}
-						break;
-					}
+		// Internet shortcuts also publish the native URL types used by
+		// browsers and editors, while retaining the filename for Finder.
+		if ([[[firstPath pathExtension] lowercaseString]
+				isEqualToString:@"url"]) {
+			NSString* shortcut =
+				[NSString stringWithContentsOfFile:firstPath
+										 encoding:NSUTF8StringEncoding
+											error:nil];
+			for (NSString* line in
+					[shortcut componentsSeparatedByCharactersInSet:
+						[NSCharacterSet newlineCharacterSet]]) {
+				if ([line hasPrefix:@"URL="]) {
+					draggedURL = [line substringFromIndex:4];
+					break;
 				}
 			}
-
-			NSDraggingItem* item =
-				[[NSDraggingItem alloc] initWithPasteboardWriter:writer];
-			NSImage* image = [[NSWorkspace sharedWorkspace] iconForFile:path];
-			[image setSize:NSMakeSize(32, 32)];
-			NSRect frame = imageLocation;
-			frame.origin.x += offset;
-			frame.origin.y -= offset;
-			[item setDraggingFrame:frame contents:image];
-			[draggingItems addObject:item];
-			[item release];
-			offset += 4;
+			if (draggedURL != nil) {
+				[types addObject:NSURLPboardType];
+				if (![types containsObject:@"public.url"]) {
+					[types addObject:@"public.url"];
+				}
+			}
 		}
 
-		[self beginDraggingSessionWithItems:draggingItems
-									 event:theEvent
-									source:self];
+		[pasteboard declareTypes:types owner:nil];
+		[pasteboard setPropertyList:m_dragPaths
+						   forType:NSFilenamesPboardType];
+		if (draggedURL != nil) {
+			[pasteboard setString:draggedURL forType:NSURLPboardType];
+			[pasteboard setString:draggedURL forType:@"public.url"];
+		}
+
+		NSImage* image =
+			[[NSWorkspace sharedWorkspace] iconForFile:firstPath];
+		[image setSize:NSMakeSize(32, 32)];
+		[self dragImage:image
+					at:dragPosition
+				offset:NSZeroSize
+				 event:theEvent
+			pasteboard:pasteboard
+				source:self
+			 slideBack:NO];
 		return;
 	}
 
