@@ -8,6 +8,7 @@
  */
 
 #include "inputleap/TransferSender.h"
+#include "inputleap/TransferControl.h"
 
 #include <algorithm>
 #include <chrono>
@@ -27,7 +28,36 @@ void TransferSender::wait_if_paused() const
     if (progress_ == nullptr) {
         return;
     }
+    if (progress_->should_cancel()) {
+        throw std::runtime_error("transfer was cancelled");
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (last_control_check_ !=
+            std::chrono::steady_clock::time_point{} &&
+        now - last_control_check_ < std::chrono::milliseconds(40)) {
+        return;
+    }
+    last_control_check_ = now;
+    auto snapshot = progress_->snapshot();
+    if (consume_transfer_control(snapshot.transfer_id,
+                                 TransferControlAction::Cancel)) {
+        progress_->cancel();
+    }
+    if (consume_transfer_control(snapshot.transfer_id,
+                                 TransferControlAction::Pause)) {
+        progress_->pause();
+    }
     while (progress_->snapshot().state == TransferState::Paused) {
+        snapshot = progress_->snapshot();
+        if (consume_transfer_control(snapshot.transfer_id,
+                                     TransferControlAction::Resume)) {
+            progress_->resume();
+            break;
+        }
+        if (consume_transfer_control(snapshot.transfer_id,
+                                     TransferControlAction::Cancel)) {
+            progress_->cancel();
+        }
         if (progress_->should_cancel()) {
             throw std::runtime_error("transfer was cancelled");
         }
@@ -40,7 +70,9 @@ void TransferSender::wait_if_paused() const
 
 void TransferSender::send(
     const TransferPlan& plan, const FrameSink& sink,
-    const std::vector<std::uint64_t>& resume_offsets)
+    const std::vector<std::uint64_t>& resume_offsets,
+    const ResumeOffsetProvider& resume_provider,
+    const CompletionWaiter& completion_waiter)
 {
     std::string error;
     if (!plan.manifest.validate(&error) ||
@@ -64,13 +96,25 @@ void TransferSender::send(
         sink({TransferFrameType::Manifest, plan.manifest.transfer_id(), 0, 0,
               plan.manifest.serialize()});
 
+        auto active_resume_offsets = resume_offsets;
+        if (resume_provider) {
+            active_resume_offsets = resume_provider(plan.manifest);
+            if (active_resume_offsets.size() !=
+                plan.manifest.entries().size()) {
+                throw std::runtime_error(
+                    "received an invalid transfer resume state");
+            }
+        }
+
         std::vector<char> buffer(TransferFrame::kMaxChunkPayload);
         for (std::size_t index = 0;
              index < plan.manifest.entries().size(); ++index) {
             wait_if_paused();
             const auto& entry = plan.manifest.entries()[index];
             const auto resume_offset =
-                resume_offsets.empty() ? 0 : resume_offsets[index];
+                active_resume_offsets.empty()
+                    ? 0
+                    : active_resume_offsets[index];
             if (resume_offset > entry.size) {
                 throw std::invalid_argument("resume offset exceeds entry size");
             }
@@ -124,6 +168,9 @@ void TransferSender::send(
 
         sink({TransferFrameType::TransferComplete,
               plan.manifest.transfer_id(), 0, plan.manifest.total_size(), {}});
+        if (completion_waiter) {
+            completion_waiter(plan.manifest);
+        }
         if (progress_ != nullptr) {
             progress_->complete();
         }

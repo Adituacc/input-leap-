@@ -40,6 +40,7 @@ public:
     Server* getServer() { return m_server; }
     std::int16_t getProtocolMinorVersion() const { return m_protocol_minor; }
     bool supportsTransferV2() const override { return m_protocol_minor >= 7; }
+    bool supportsTransferResume() const override { return m_protocol_minor >= 8; }
 
     IStream* getStream() const;
 

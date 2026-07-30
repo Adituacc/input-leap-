@@ -31,6 +31,7 @@
 #include "inputleap/Exceptions.h"
 #include "inputleap/StreamChunker.h"
 #include "inputleap/TransferCatalog.h"
+#include "inputleap/TransferControl.h"
 #include "inputleap/TransferFrame.h"
 #include "inputleap/TransferSender.h"
 #include "inputleap/KeyState.h"
@@ -94,6 +95,9 @@ Server::Server(
 	m_sendFileThread(nullptr),
 	m_writeToDropDirThread(nullptr),
     m_transferReceiver(&m_transferReceiveProgress),
+    m_transferControlTimer(nullptr),
+    m_pendingTransferSupportsResume(false),
+    m_transferRetryPending(false),
     m_nativeDragReceivePending(false),
 	m_ignoreFileTransfer(false),
 	m_enableClipboard(true),
@@ -102,6 +106,15 @@ Server::Server(
 	m_waitDragInfoThread(true),
 	m_args(args)
 {
+    m_transferSendProgress.set_observer(
+        [](const TransferProgressSnapshot& snapshot) {
+            log_transfer_progress(snapshot, "send");
+        });
+    m_transferReceiveProgress.set_observer(
+        [](const TransferProgressSnapshot& snapshot) {
+            log_transfer_progress(snapshot, "receive");
+        });
+
     input_filter_.add_rules(config.get_input_filter_rules());
 
 	// must have a primary client and it must have a canonical name
@@ -180,6 +193,11 @@ Server::Server(
                               });
         m_events->add_handler(EventType::FILE_RECEIVE_COMPLETED, this,
                               [this](const auto& e){ handle_file_receive_completed_event(e); });
+        m_transferControlTimer = m_events->newTimer(0.25, nullptr);
+        m_events->add_handler(EventType::TIMER, m_transferControlTimer,
+                              [this](const auto&) {
+                                  poll_transfer_control();
+                              });
 	}
 
 	// add connection
@@ -202,6 +220,11 @@ Server::Server(
 
 Server::~Server()
 {
+    if (m_transferControlTimer != nullptr) {
+        m_events->remove_handler(EventType::TIMER, m_transferControlTimer);
+        m_events->deleteTimer(m_transferControlTimer);
+        m_transferControlTimer = nullptr;
+    }
 	if (m_mock) {
 		return;
 	}
@@ -307,6 +330,7 @@ Server::adoptClient(BaseClientProxy* client)
 		return;
 	}
 	LOG_NOTE("client \"%s\" has connected", getName(client).c_str());
+    retry_pending_transfer(getName(client));
 
 	// send configuration options to client
 	sendOptions(client);
@@ -2353,19 +2377,35 @@ Server::sendFilesToClient(const std::vector<std::string>& filenames)
     }
     const auto targetScreen = getName(m_active);
     const bool supportsTransferV2 = m_active->supportsTransferV2();
+    const bool supportsTransferResume =
+        m_active->supportsTransferResume();
     m_sendFileThread = new Thread(
-        [this, filenames, targetScreen, supportsTransferV2]() {
+        [this, filenames, targetScreen, supportsTransferV2,
+         supportsTransferResume]() {
             send_file_thread(
-                filenames, targetScreen, supportsTransferV2);
+                filenames, targetScreen, supportsTransferV2,
+                supportsTransferResume);
         });
 }
 
 void Server::on_transfer_frame_sending(const TransferFrameInfo& info)
 {
+    {
+        std::lock_guard<std::mutex> lock(m_transferJobMutex);
+        if (info.frame.type == TransferFrameType::Cancel &&
+            m_transferRetryPending) {
+            return;
+        }
+    }
     const auto target = m_clients.find(info.screen);
     if (target == m_clients.end()) {
         LOG_ERR("transfer target \"%s\" disconnected", info.screen.c_str());
+        {
+            std::lock_guard<std::mutex> lock(m_transferJobMutex);
+            m_transferRetryPending = true;
+        }
         m_transferSendProgress.cancel();
+        m_transferResumeCoordinator.cancel(info.frame.transfer_id);
         return;
     }
     if (!target->second->supportsTransferV2()) {
@@ -2380,39 +2420,96 @@ void Server::on_transfer_frame_sending(const TransferFrameInfo& info)
     catch (const std::exception& error) {
         LOG_ERR("failed writing transfer frame to \"%s\": %s",
                 info.screen.c_str(), error.what());
+        {
+            std::lock_guard<std::mutex> lock(m_transferJobMutex);
+            m_transferRetryPending = true;
+        }
         m_transferSendProgress.cancel();
+        m_transferResumeCoordinator.cancel(info.frame.transfer_id);
     }
     catch (...) {
         LOG_ERR("failed writing transfer frame to \"%s\": unknown error",
                 info.screen.c_str());
+        {
+            std::lock_guard<std::mutex> lock(m_transferJobMutex);
+            m_transferRetryPending = true;
+        }
         m_transferSendProgress.cancel();
+        m_transferResumeCoordinator.cancel(info.frame.transfer_id);
     }
 }
 
 void Server::send_file_thread(
     std::vector<std::string> filenames, std::string targetScreen,
-    bool supportsTransferV2)
+    bool supportsTransferV2, bool supportsTransferResume)
 {
 	try {
-        if (filenames.empty()) {
+        if (filenames.empty() && !supportsTransferV2) {
             throw std::invalid_argument("no drag sources were supplied");
         }
 		LOG_INFO("sending %zi dragged item(s) to \"%s\"",
                  filenames.size(), targetScreen.c_str());
         if (supportsTransferV2) {
-            std::vector<fs::path> paths;
-            paths.reserve(filenames.size());
-            for (const auto& filename : filenames) {
-                paths.push_back(fs::u8path(filename));
+            std::shared_ptr<TransferPlan> plan;
+            if (filenames.empty()) {
+                std::lock_guard<std::mutex> lock(m_transferJobMutex);
+                plan = m_pendingTransferPlan;
             }
-            auto plan = TransferCatalog::plan_from_paths(paths);
+            else {
+                std::vector<fs::path> paths;
+                paths.reserve(filenames.size());
+                for (const auto& filename : filenames) {
+                    paths.push_back(fs::u8path(filename));
+                }
+                plan = std::make_shared<TransferPlan>(
+                    TransferCatalog::plan_from_paths(paths));
+                std::lock_guard<std::mutex> lock(m_transferJobMutex);
+                m_pendingTransferPlan = plan;
+                m_pendingTransferTarget = targetScreen;
+                m_pendingTransferSupportsResume = supportsTransferResume;
+                m_transferRetryPending = false;
+            }
+            if (!plan) {
+                throw std::runtime_error("no transfer is available to retry");
+            }
+            m_transferResumeCoordinator.prepare(
+                plan->manifest.transfer_id(),
+                plan->manifest.entries().size());
             TransferSender sender(&m_transferSendProgress);
-            sender.send(plan, [this, targetScreen](const TransferFrame& frame) {
+            TransferSender::FrameSink sink =
+                [this, targetScreen](const TransferFrame& frame) {
                 m_events->add_event(
                     EventType::TRANSFER_V2_FRAME_SENDING, this,
                     create_event_data<TransferFrameInfo>(
                         TransferFrameInfo{targetScreen, frame}));
-            });
+            };
+            if (supportsTransferResume) {
+                sender.send(*plan, sink, {}, [this](const TransferManifest&) {
+                    return m_transferResumeCoordinator.wait();
+                }, [this](const TransferManifest& manifest) {
+                    const auto offsets = m_transferResumeCoordinator.wait();
+                    if (offsets.size() != manifest.entries().size()) {
+                        throw std::runtime_error(
+                            "invalid transfer completion acknowledgment");
+                    }
+                    for (std::size_t index = 0; index < offsets.size(); ++index) {
+                        if (offsets[index] != manifest.entries()[index].size) {
+                            throw std::runtime_error(
+                                "receiver did not commit the complete transfer");
+                        }
+                    }
+                });
+            }
+            else {
+                sender.send(*plan, sink);
+            }
+            std::lock_guard<std::mutex> lock(m_transferJobMutex);
+            if (m_pendingTransferPlan == plan) {
+                m_pendingTransferPlan.reset();
+                m_pendingTransferTarget.clear();
+                m_pendingTransferSupportsResume = false;
+                m_transferRetryPending = false;
+            }
         }
         else {
             if (filenames.size() > 1) {
@@ -2431,9 +2528,83 @@ void Server::send_file_thread(
 	m_sendFileThread = nullptr;
 }
 
-void Server::handleTransferV2Frame(const TransferFrame& frame)
+void Server::poll_transfer_control()
 {
-    if (frame.type == TransferFrameType::Manifest) {
+    const auto snapshot = m_transferSendProgress.snapshot();
+    if ((snapshot.state == TransferState::Failed ||
+         snapshot.state == TransferState::Cancelled) &&
+        consume_transfer_control(snapshot.transfer_id,
+                                 TransferControlAction::Retry)) {
+        {
+            std::lock_guard<std::mutex> lock(m_transferJobMutex);
+            m_transferRetryPending = true;
+        }
+    }
+    retry_pending_transfer();
+}
+
+void Server::retry_pending_transfer(const std::string& connectedScreen)
+{
+    if (m_sendFileThread != nullptr) {
+        return;
+    }
+    std::string target;
+    {
+        std::lock_guard<std::mutex> lock(m_transferJobMutex);
+        if (!m_transferRetryPending || !m_pendingTransferPlan ||
+            !m_pendingTransferSupportsResume) {
+            return;
+        }
+        target = m_pendingTransferTarget;
+        if (!connectedScreen.empty() && connectedScreen != target) {
+            return;
+        }
+        if (m_clients.find(target) == m_clients.end()) {
+            return;
+        }
+        m_transferRetryPending = false;
+    }
+    LOG_INFO("resuming interrupted transfer to \"%s\"", target.c_str());
+    m_sendFileThread = new Thread(
+        [this, target]() { send_file_thread({}, target, true, true); });
+}
+
+void Server::handleTransferV2Frame(const TransferFrame& frame,
+                                   BaseClientProxy* sourceClient)
+{
+    const auto transferId = frame.transfer_id;
+    if (frame.type == TransferFrameType::ResumeState) {
+        std::vector<std::uint64_t> offsets;
+        std::string error;
+        if (!TransferFrame::deserialize_resume_offsets(
+                frame.payload, offsets, &error) ||
+            !m_transferResumeCoordinator.accept(frame.transfer_id, offsets)) {
+            throw std::runtime_error(
+                error.empty() ? "unexpected transfer resume state" : error);
+        }
+        return;
+    }
+    if (frame.type == TransferFrameType::Cancel &&
+        m_transferSendProgress.snapshot().transfer_id == frame.transfer_id) {
+        m_transferResumeCoordinator.cancel(frame.transfer_id);
+        m_transferSendProgress.cancel();
+        return;
+    }
+    if (frame.type != TransferFrameType::Manifest &&
+        frame.type != TransferFrameType::Cancel &&
+        m_transferReceiver.active() &&
+        m_transferReceiver.transfer_id() == frame.transfer_id &&
+        consume_transfer_control(frame.transfer_id,
+                                 TransferControlAction::Cancel)) {
+        m_transferReceiver.cancel();
+        if (sourceClient != nullptr) {
+            sourceClient->transfer_frame_sending(
+                {TransferFrameType::Cancel, frame.transfer_id, 0, 0, {}});
+        }
+        return;
+    }
+    if (frame.type == TransferFrameType::Manifest &&
+        !m_transferReceiver.has_transfer(frame.transfer_id)) {
         if (m_screen->getDropTarget().empty()) {
             const double deadline = inputleap::current_time_seconds() + 6.0;
             while (m_screen->isFakeDraggingStarted() &&
@@ -2445,10 +2616,35 @@ void Server::handleTransferV2Frame(const TransferFrame& frame)
             throw std::runtime_error("drag destination was not selected");
         }
     }
+    std::vector<std::uint64_t> completionOffsets;
+    if (frame.type == TransferFrameType::TransferComplete &&
+        m_transferReceiver.has_transfer(frame.transfer_id)) {
+        completionOffsets = m_transferReceiver.resume_offsets();
+    }
     const auto completed =
         m_transferReceiver.handle_frame(frame, fs::u8path(m_screen->getDropTarget()));
+    if (frame.type == TransferFrameType::Manifest &&
+        sourceClient != nullptr &&
+        sourceClient->supportsTransferResume()) {
+        if (sourceClient == nullptr) {
+            throw std::runtime_error(
+                "transfer source disconnected before resume negotiation");
+        }
+        sourceClient->transfer_frame_sending(
+            {TransferFrameType::ResumeState, frame.transfer_id, 0, 0,
+             TransferFrame::serialize_resume_offsets(
+                 m_transferReceiver.resume_offsets())});
+    }
+    else if (frame.type == TransferFrameType::TransferComplete &&
+             sourceClient != nullptr &&
+             sourceClient->supportsTransferResume()) {
+        sourceClient->transfer_frame_sending(
+            {TransferFrameType::ResumeState, frame.transfer_id, 0, 0,
+             TransferFrame::serialize_resume_offsets(completionOffsets)});
+    }
     for (const auto& path : completed) {
         LOG_INFO("completed transfer-v2 item \"%s\"", path.u8string().c_str());
+        log_transfer_result(transferId, path.u8string());
     }
 #if defined(SYSAPI_WIN32) || defined(__APPLE__)
     if (!completed.empty() && m_nativeDragReceivePending) {

@@ -184,6 +184,7 @@ void ClientProxyUnknown::handle_data()
                 switch (minor) {
                 case 6:
                 case 7:
+                case 8:
                     m_proxy = new ClientProxy1_6(
                         name, std::move(conn), m_server, m_events, minor);
                     break;

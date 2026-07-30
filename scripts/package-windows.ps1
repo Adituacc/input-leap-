@@ -1,5 +1,5 @@
 param(
-    [string] $Version = "3.0.3-secure-fork-beta2"
+    [string] $Version = "3.0.3-transfer-manager-beta1"
 )
 
 $ErrorActionPreference = "Stop"

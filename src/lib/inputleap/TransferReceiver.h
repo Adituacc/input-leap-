@@ -39,6 +39,8 @@ public:
                                        const fs::path& destination);
 
     bool active() const { return active_; }
+    const std::string& transfer_id() const { return manifest_.transfer_id(); }
+    bool has_transfer(const std::string& transfer_id) const;
 
 private:
     fs::path entry_staging_path(std::size_t entry_index) const;
@@ -51,6 +53,10 @@ private:
     fs::path staging_root_;
     std::vector<std::uint64_t> offsets_;
     std::vector<bool> verified_;
+    std::string completed_transfer_id_;
+    std::string completed_manifest_wire_;
+    std::vector<std::uint64_t> completed_offsets_;
+    std::vector<fs::path> completed_results_;
     TransferProgress* progress_;
     bool active_ = false;
 };

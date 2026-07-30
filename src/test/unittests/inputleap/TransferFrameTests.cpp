@@ -8,8 +8,11 @@
  */
 
 #include "inputleap/TransferFrame.h"
+#include "inputleap/TransferResumeCoordinator.h"
 
 #include "test/global/gtest.h"
+
+#include <thread>
 
 namespace inputleap {
 
@@ -58,6 +61,43 @@ TEST(TransferFrameTests, rejectsOversizedChunkAndMismatchedManifest)
         manifest.serialize()
     };
     EXPECT_FALSE(mismatched.validate());
+}
+
+TEST(TransferFrameTests, resumeOffsetsRoundTripAndRejectMalformedPayload)
+{
+    const std::vector<std::uint64_t> expected{0, 17, 0xffffffffull,
+                                               0x100000000ull};
+    const auto payload = TransferFrame::serialize_resume_offsets(expected);
+    TransferFrame frame{
+        TransferFrameType::ResumeState,
+        "30112233445566778899aabbccddeeff",
+        0,
+        0,
+        payload
+    };
+    EXPECT_TRUE(frame.validate());
+
+    std::vector<std::uint64_t> parsed;
+    std::string error;
+    EXPECT_TRUE(TransferFrame::deserialize_resume_offsets(
+        payload, parsed, &error)) << error;
+    EXPECT_EQ(parsed, expected);
+
+    EXPECT_FALSE(TransferFrame::deserialize_resume_offsets(
+        std::string{"\0\0\0\2\0", 5}, parsed, &error));
+}
+
+TEST(TransferFrameTests, resumeCoordinatorDeliversOffsetsAcrossThreads)
+{
+    TransferResumeCoordinator coordinator;
+    const std::string transfer_id = "40112233445566778899aabbccddeeff";
+    coordinator.prepare(transfer_id, 2);
+
+    std::thread response([&coordinator, &transfer_id]() {
+        coordinator.accept(transfer_id, {12, 34});
+    });
+    EXPECT_EQ(coordinator.wait(), (std::vector<std::uint64_t>{12, 34}));
+    response.join();
 }
 
 } // namespace inputleap

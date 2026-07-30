@@ -25,13 +25,11 @@ with SHA-256 before making it visible, permits at most 2,048 manifest entries,
 and caps one transfer at 64 GiB. A peer using protocol 1.6 falls back to the
 legacy in-memory path, which is limited to one file and 256 MiB.
 
-The receiver writes each item to the selected or configured drop directory.
-Windows uses the desktop when no drop directory is configured. Existing files
-are not overwritten; Input Leap adds ` (1)`, ` (2)`, and so on.
-
-macOS uses its native promised-file destination handoff. Windows currently
-materializes received items in the drop directory; it does not yet synthesize
-a native Windows OLE drag object inside an arbitrary application.
+The receiver first stages and verifies each item, then hands the materialized
+items to the native destination drag system at the pointer on macOS and
+Windows. The configured drop directory is used as a safe fallback when a
+destination application does not accept the native drop. Existing files are
+not overwritten; Input Leap adds ` (1)`, ` (2)`, and so on.
 
 ## User setup
 

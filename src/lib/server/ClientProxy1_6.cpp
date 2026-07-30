@@ -575,7 +575,7 @@ void ClientProxy1_6::transferFrameReceived()
     if (!TransferFrame::deserialize(wire, frame, &error)) {
         throw XBadClient(error);
     }
-    m_server->handleTransferV2Frame(frame);
+    m_server->handleTransferV2Frame(frame, this);
 }
 
 void ClientProxy1_6::dragInfoReceived()

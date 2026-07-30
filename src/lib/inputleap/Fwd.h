@@ -51,6 +51,7 @@ class DragInformation;
 // FileChunk.h
 class FileChunk;
 struct TransferFrame;
+struct TransferPlan;
 
 // IApp.h
 class IApp;

@@ -31,6 +31,7 @@
 #include "QUtility.h"
 #include "ProcessorArch.h"
 #include "SslCertificate.h"
+#include "TransferWindow.h"
 #include "base/String.h"
 #include "common/DataDirectories.h"
 #include "net/FingerprintDatabase.h"
@@ -124,6 +125,7 @@ MainWindow::MainWindow(QSettings& settings, AppConfig& appConfig) :
     m_pMenuBar(nullptr),
     main_menu_(nullptr),
     m_pMenuHelp(nullptr),
+    m_pActionTransfers(nullptr),
     m_pZeroconfService(nullptr),
     m_pDataDownloader(nullptr),
     m_DownloadMessageBox(nullptr),
@@ -133,7 +135,8 @@ MainWindow::MainWindow(QSettings& settings, AppConfig& appConfig) :
     m_SuppressEmptyServerWarning(false),
     m_ExpectedRunningState(kStopped),
     m_pSslCertificate(nullptr),
-    m_pLogWindow(new LogWindow(nullptr))
+    m_pLogWindow(new LogWindow(nullptr)),
+    m_pTransferWindow(new TransferWindow(settings, nullptr))
 {
     // explicitly unset DeleteOnClose so the window can be show and hidden
     // repeatedly until InputLeap is finished
@@ -193,6 +196,15 @@ MainWindow::MainWindow(QSettings& settings, AppConfig& appConfig) :
         }
     });
 
+    connect(m_pTransferWindow, &TransferWindow::notificationRequested,
+            this, [this](const QString& title, const QString& message) {
+                if (m_pTrayIcon != nullptr) {
+                    m_pTrayIcon->showMessage(title, message,
+                                             QSystemTrayIcon::Information,
+                                             5000);
+                }
+            });
+
     // resize window to smallest reasonable size
     resize(0, 0);
 }
@@ -210,6 +222,7 @@ MainWindow::~MainWindow()
     delete m_DownloadMessageBox;
     delete m_BonjourInstall;
     delete m_pSslCertificate;
+    delete m_pTransferWindow;
 
     // LogWindow is created as a sibling of the MainWindow rather than a child
     // so that the main window can be hidden without hiding the log. because of
@@ -255,6 +268,7 @@ void MainWindow::createTrayIcon()
     m_pTrayIconMenu->addAction(ui_->m_pActionStartCmdApp);
     m_pTrayIconMenu->addAction(ui_->m_pActionStopCmdApp);
     m_pTrayIconMenu->addAction(ui_->m_pActionShowLog);
+    m_pTrayIconMenu->addAction(m_pActionTransfers);
     m_pTrayIconMenu->addAction(ui_->m_pActionReload);
     m_pTrayIconMenu->addSeparator();
 
@@ -302,6 +316,7 @@ void MainWindow::createMenuBar()
 #endif
 
     main_menu_->addAction(ui_->m_pActionShowLog);
+    m_pActionTransfers = main_menu_->addAction(tr("Transfers"));
     main_menu_->addAction(ui_->m_pActionSettings);
     main_menu_->addAction(ui_->m_pActionMinimize);
     main_menu_->addSeparator();
@@ -342,6 +357,8 @@ void MainWindow::initConnections()
     connect(ui_->m_pActionStartCmdApp, &QAction::triggered, this, &MainWindow::start_cmd_app);
     connect(ui_->m_pActionStopCmdApp, &QAction::triggered, this, &MainWindow::stop_cmd_app);
     connect(ui_->m_pActionShowLog, &QAction::triggered, this, &MainWindow::showLogWindow);
+    connect(m_pActionTransfers, &QAction::triggered,
+            this, &MainWindow::showTransferWindow);
     connect(ui_->m_pActionReload, &QAction::triggered, this, &MainWindow::restart_cmd_app);
     connect(ui_->m_pActionQuit, &QAction::triggered, qApp, &QCoreApplication::quit);
 }
@@ -442,6 +459,7 @@ void MainWindow::appendLogRaw(const QString& text)
     for (const auto& line : lines) {
         if (!line.isEmpty()) {
             m_pLogWindow->appendRaw(line);
+            m_pTransferWindow->processLogLine(line);
             updateFromLogLine(line);
         }
     }
@@ -1456,4 +1474,11 @@ void MainWindow::windowStateChanged()
 void MainWindow::showLogWindow()
 {
     m_pLogWindow->show();
+}
+
+void MainWindow::showTransferWindow()
+{
+    m_pTransferWindow->show();
+    m_pTransferWindow->raise();
+    m_pTransferWindow->activateWindow();
 }

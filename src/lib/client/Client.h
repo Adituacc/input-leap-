@@ -23,6 +23,7 @@
 #include "inputleap/Fwd.h"
 #include "inputleap/TransferProgress.h"
 #include "inputleap/TransferReceiver.h"
+#include "inputleap/TransferResumeCoordinator.h"
 #include "inputleap/IClient.h"
 #include "inputleap/Clipboard.h"
 #include "inputleap/DragInformation.h"
@@ -31,6 +32,9 @@
 #include "net/Fwd.h"
 #include "net/NetworkAddress.h"
 #include "base/EventTypes.h"
+
+#include <memory>
+#include <mutex>
 
 namespace inputleap {
 
@@ -130,6 +134,7 @@ public:
     DragFileList getDragFileList() { return m_dragFileList; }
     std::int16_t getProtocolMinorVersion() const { return m_protocolMinorVersion; }
     bool supportsTransferV2() const { return m_protocolMinorVersion >= 7; }
+    bool supportsTransferResume() const { return m_protocolMinorVersion >= 8; }
     void handleTransferV2Frame(const TransferFrame& frame);
 
     //@}
@@ -167,6 +172,8 @@ private:
     void sendConnectionFailedEvent(const char* msg);
     void send_file_chunk(const FileChunk& data);
     void send_file_thread(std::vector<std::string> filenames);
+    void poll_transfer_control();
+    void retry_pending_transfer();
     void write_to_drop_dir_thread();
     void setupConnecting();
     void setupConnection();
@@ -224,6 +231,11 @@ private:
     TransferProgress m_transferSendProgress;
     TransferProgress m_transferReceiveProgress;
     TransferReceiver m_transferReceiver;
+    TransferResumeCoordinator m_transferResumeCoordinator;
+    EventQueueTimer* m_transferControlTimer;
+    std::mutex m_transferJobMutex;
+    std::shared_ptr<TransferPlan> m_pendingTransferPlan;
+    bool m_transferRetryPending;
     bool m_nativeDragReceivePending;
     bool m_useSecureNetwork;
     ClientArgs m_args;

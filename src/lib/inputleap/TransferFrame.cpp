@@ -120,6 +120,12 @@ bool TransferFrame::validate(std::string* error) const
         set_error(error, "control transfer frame contains unexpected payload");
         return false;
     }
+    if (type == TransferFrameType::ResumeState) {
+        std::vector<std::uint64_t> offsets;
+        if (!deserialize_resume_offsets(payload, offsets, error)) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -173,6 +179,47 @@ bool TransferFrame::deserialize(const std::string& wire, TransferFrame& frame,
         return false;
     }
     frame = std::move(parsed);
+    return true;
+}
+
+std::string TransferFrame::serialize_resume_offsets(
+    const std::vector<std::uint64_t>& offsets)
+{
+    if (offsets.size() > TransferManifest::kMaxEntries) {
+        throw std::invalid_argument("too many transfer resume offsets");
+    }
+    std::string payload;
+    payload.reserve(4 + offsets.size() * 8);
+    append_u32(payload, static_cast<std::uint32_t>(offsets.size()));
+    for (const auto offset : offsets) {
+        append_u64(payload, offset);
+    }
+    return payload;
+}
+
+bool TransferFrame::deserialize_resume_offsets(
+    const std::string& payload, std::vector<std::uint64_t>& offsets,
+    std::string* error)
+{
+    std::size_t position = 0;
+    std::uint32_t count = 0;
+    if (!take_u32(payload, position, count) ||
+        count > TransferManifest::kMaxEntries ||
+        payload.size() - position != static_cast<std::size_t>(count) * 8) {
+        set_error(error, "invalid transfer resume state");
+        return false;
+    }
+    std::vector<std::uint64_t> parsed;
+    parsed.reserve(count);
+    for (std::uint32_t index = 0; index < count; ++index) {
+        std::uint64_t offset = 0;
+        if (!take_u64(payload, position, offset)) {
+            set_error(error, "truncated transfer resume state");
+            return false;
+        }
+        parsed.push_back(offset);
+    }
+    offsets = std::move(parsed);
     return true;
 }
 

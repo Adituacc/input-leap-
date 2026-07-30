@@ -13,6 +13,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <string>
 
@@ -43,6 +44,9 @@ struct TransferProgressSnapshot {
 
 class TransferProgress {
 public:
+    using Observer = std::function<void(const TransferProgressSnapshot&)>;
+
+    void set_observer(Observer observer);
     void begin(const TransferManifest& manifest);
     void set_current_entry(std::size_t index);
     void add_bytes(std::uint64_t count);
@@ -59,10 +63,18 @@ public:
 private:
     using Clock = std::chrono::steady_clock;
 
+    void notify(const TransferProgressSnapshot& snapshot,
+                const Observer& observer) const;
+    bool prepare_notification_locked(bool force,
+                                     TransferProgressSnapshot& snapshot,
+                                     Observer& observer);
+
     mutable std::mutex mutex_;
     TransferManifest manifest_;
     TransferProgressSnapshot snapshot_;
     Clock::time_point started_;
+    Clock::time_point last_notification_;
+    Observer observer_;
 };
 
 } // namespace inputleap

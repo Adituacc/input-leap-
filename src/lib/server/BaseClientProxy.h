@@ -67,6 +67,7 @@ public:
     virtual void sendDragInfo(std::uint32_t fileCount, const char* info, size_t size) = 0;
     virtual void file_chunk_sending(const FileChunk& chunk) = 0;
     virtual bool supportsTransferV2() const { return false; }
+    virtual bool supportsTransferResume() const { return false; }
     virtual void transfer_frame_sending(const TransferFrame&) {}
     std::string getName() const override;
     virtual IClientConnection& get_conn() const = 0;

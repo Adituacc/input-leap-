@@ -29,6 +29,7 @@
 #include "inputleap/ServerArgs.h"
 #include "inputleap/TransferProgress.h"
 #include "inputleap/TransferReceiver.h"
+#include "inputleap/TransferResumeCoordinator.h"
 #include "base/Fwd.h"
 #include "base/Event.h"
 #include "base/EventTarget.h"
@@ -36,6 +37,8 @@
 #include "base/EventTypes.h"
 
 #include <map>
+#include <memory>
+#include <mutex>
 #include <set>
 #include <vector>
 
@@ -168,7 +171,8 @@ public:
 
     //! Received dragging information from client
     void dragInfoReceived(std::uint32_t fileNum, std::string content);
-    void handleTransferV2Frame(const TransferFrame& frame);
+    void handleTransferV2Frame(const TransferFrame& frame,
+                               BaseClientProxy* sourceClient);
     void cancelTransfer() noexcept;
 
     //! Store ClientListener pointer
@@ -380,7 +384,9 @@ private:
     // thread function for sending file
     void send_file_thread(
         std::vector<std::string> filenames, std::string targetScreen,
-        bool supportsTransferV2);
+        bool supportsTransferV2, bool supportsTransferResume);
+    void poll_transfer_control();
+    void retry_pending_transfer(const std::string& connectedScreen = {});
 
     // thread function for writing file to drop directory
     void write_to_drop_dir_thread();
@@ -498,6 +504,13 @@ private:
     TransferProgress m_transferSendProgress;
     TransferProgress m_transferReceiveProgress;
     TransferReceiver m_transferReceiver;
+    TransferResumeCoordinator m_transferResumeCoordinator;
+    EventQueueTimer* m_transferControlTimer;
+    std::mutex m_transferJobMutex;
+    std::shared_ptr<TransferPlan> m_pendingTransferPlan;
+    std::string m_pendingTransferTarget;
+    bool m_pendingTransferSupportsResume;
+    bool m_transferRetryPending;
     bool m_nativeDragReceivePending;
     std::string m_dragFileExt;
     bool m_ignoreFileTransfer;

@@ -6,6 +6,8 @@ param(
     [string] $OpenSslRoot,
     [string] $BonjourRoot,
 
+    [string] $VersionDescription = "transfer-manager-beta1",
+
     [switch] $SkipTests
 )
 
@@ -71,7 +73,7 @@ $configureArguments = @(
     "-DOPENSSL_ROOT_DIR=$OpenSslRoot",
     "-DDNSSD_LIB=$dnssdLibrary",
     "-DDNSSD_INCLUDE_DIR=$dnssdInclude",
-    "-DINPUTLEAP_VERSION_DESC=secure-fork-beta2",
+    "-DINPUTLEAP_VERSION_DESC=$VersionDescription",
     "-DCMAKE_INSTALL_PREFIX=$installDir"
 )
 

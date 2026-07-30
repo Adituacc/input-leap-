@@ -51,6 +51,11 @@ verification and recursive folder support. See the
 [cross-platform drag-and-drop guide](doc/cross-platform-drag-drop.md) and
 [transfer-v2 protocol notes](doc/transfer-v2.md).
 
+The GUI includes a **Transfers** window with live byte progress, transfer
+speed, persistent history, pause/cancel/retry controls, completion
+notifications, and automatic continuation from receiver-confirmed offsets
+after a temporary connection loss.
+
 ### Contact info:
 
 - `#inputleap` on LiberaChat IRC network, for support with Input Leap.

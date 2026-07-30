@@ -42,3 +42,7 @@ bundle
 compile_commands.json
 # Cache (used by clangd)
 .cache
+
+# Local live-transfer diagnostics
+/live-*.log
+/test-*.log

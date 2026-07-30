@@ -167,6 +167,17 @@ ServerProxy::EResult ServerProxy::parseHandshakeMessage(const std::uint8_t* code
         m_client->handshakeComplete();
     }
 
+    else if (memcmp(code, kMsgDTransferV2, 4) == 0) {
+        if (!m_client->supportsTransferV2()) {
+            return kDisconnect;
+        }
+        // A transfer can be initiated as soon as the protocol version is
+        // negotiated, before the final option packet completes the normal
+        // handshake. Resume state must therefore be accepted here as well as
+        // by the steady-state parser.
+        transferFrameReceived();
+    }
+
     else if (memcmp(code, kMsgCResetOptions, 4) == 0) {
         resetOptions();
     }

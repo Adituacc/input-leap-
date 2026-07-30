@@ -34,9 +34,10 @@ namespace inputleap {
 // 1.5:  adds file transfer and removes home brew crypto
 // 1.6:  adds clipboard streaming
 // 1.7:  negotiates transfer-v2 capability
+// 1.8:  negotiates live transfer resume and completion acknowledgments
 // NOTE: with new version, InputLeap minor version should increment
 static const std::int16_t kProtocolMajorVersion = 1;
-static const std::int16_t kProtocolMinorVersion = 7;
+static const std::int16_t kProtocolMinorVersion = 8;
 static const std::int16_t kProtocolMinimumMajorVersion = 1;
 static const std::int16_t kProtocolMinimumMinorVersion = 6;
 

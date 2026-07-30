@@ -59,6 +59,7 @@ class ZeroconfService;
 class DataDownloader;
 class CommandProcess;
 class SslCertificate;
+class TransferWindow;
 
 namespace Ui
 {
@@ -129,6 +130,7 @@ public slots:
         void logError();
         void bonjourInstallFinished();
         void showLogWindow();
+        void showTransferWindow();
 
     protected:
         QSettings& settings() { return m_Settings; }
@@ -180,6 +182,7 @@ public slots:
         QMenuBar* m_pMenuBar;
         QMenu* main_menu_;
         QMenu* m_pMenuHelp;
+        QAction* m_pActionTransfers;
         ZeroconfService* m_pZeroconfService;
         DataDownloader* m_pDataDownloader;
         QMessageBox* m_DownloadMessageBox;
@@ -193,6 +196,7 @@ public slots:
         SslCertificate* m_pSslCertificate;
         QStringList m_PendingClientNames;
         LogWindow *m_pLogWindow;
+        TransferWindow* m_pTransferWindow;
 
         bool m_fingerprint_expanded = false;
 

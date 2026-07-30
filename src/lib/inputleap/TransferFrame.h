@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace inputleap {
 
@@ -42,6 +43,11 @@ struct TransferFrame {
 
     static bool deserialize(const std::string& wire, TransferFrame& frame,
                             std::string* error = nullptr);
+    static std::string serialize_resume_offsets(
+        const std::vector<std::uint64_t>& offsets);
+    static bool deserialize_resume_offsets(
+        const std::string& payload, std::vector<std::uint64_t>& offsets,
+        std::string* error = nullptr);
 };
 
 } // namespace inputleap

@@ -15,11 +15,12 @@ Each `DTR2` protocol message carries one `ILF2` frame:
 4. `TransferComplete` commits verified top-level items to the drop directory.
 5. `Cancel` removes only that transfer's staging directory.
 
-`ResumeRequest` and `ResumeState` frame types are reserved. The receiver already
-persists partial data and reports exact offsets, and the sender can continue
-from supplied offsets. Reconnect negotiation is not wired to the live socket in
-this beta, so an interrupted network connection must currently restart the
-transfer.
+Peers negotiate live resume as Input Leap protocol 1.8. After every manifest,
+the receiver returns a `ResumeState` containing the exact
+persisted offset for each entry. The sender waits for that state before sending
+chunks. If the connection is interrupted, the outgoing plan and transfer ID are
+kept in memory; after reconnection the same manifest is offered again and the
+sender continues from the receiver-confirmed offsets.
 
 ## Bounds and validation
 
@@ -62,10 +63,10 @@ Working and covered by Windows unit/integration tests:
 - multi-item file and folder capture on macOS and Windows;
 - Windows OLE capture for images, links, text, and virtual files;
 - native macOS promised-file destination selection.
+- native Windows OLE destination handoff at the pointer;
+- live reconnect/resume negotiation;
+- GUI progress, pause, cancel, retry, history, and completion notifications.
 
 Still required for a finished cross-platform product:
 
-- live reconnect/resume negotiation;
-- GUI progress, pause, resume, and cancel controls;
-- Windows OLE/Explorer drop injection at the pointer;
 - signed Windows and macOS release artifacts and platform acceptance testing.

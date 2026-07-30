@@ -123,6 +123,51 @@ TEST_F(TransferReceiverTests, refusesCorruptEntryAndCancellationRemovesPartialDa
     EXPECT_FALSE(fs::exists(test_root() / "message.txt"));
 }
 
+TEST_F(TransferReceiverTests, repeatedManifestKeepsLiveResumeOffsets)
+{
+    TransferManifest manifest;
+    manifest.set_transfer_id("21112233445566778899aabbccddeeff");
+    manifest.entries().push_back(
+        {TransferEntryKind::File, "message.txt", 6,
+         sha256_bytes("abcdef", 6)});
+    const TransferFrame manifest_frame{
+        TransferFrameType::Manifest, manifest.transfer_id(), 0, 0,
+        manifest.serialize()};
+
+    TransferReceiver receiver;
+    receiver.handle_frame(manifest_frame, test_root());
+    receiver.write_chunk(0, 0, "abc", 3);
+    receiver.handle_frame(manifest_frame, test_root());
+
+    ASSERT_EQ(receiver.resume_offsets().size(), 1u);
+    EXPECT_EQ(receiver.resume_offsets()[0], 3u);
+}
+
+TEST_F(TransferReceiverTests, progressObserverReceivesTerminalSnapshot)
+{
+    TransferManifest manifest;
+    manifest.set_transfer_id("22112233445566778899aabbccddeeff");
+    manifest.entries().push_back(
+        {TransferEntryKind::File, "message.txt", 3,
+         sha256_bytes("abc", 3)});
+
+    TransferProgress progress;
+    std::vector<TransferProgressSnapshot> snapshots;
+    progress.set_observer(
+        [&snapshots](const TransferProgressSnapshot& snapshot) {
+            snapshots.push_back(snapshot);
+        });
+    TransferReceiver receiver(&progress);
+    receiver.begin(manifest, test_root());
+    receiver.write_chunk(0, 0, "abc", 3);
+    receiver.finish_entry(0);
+    receiver.complete();
+
+    ASSERT_FALSE(snapshots.empty());
+    EXPECT_EQ(snapshots.back().state, TransferState::Completed);
+    EXPECT_EQ(snapshots.back().transferred_bytes, 3u);
+}
+
 TEST_F(TransferReceiverTests, catalogBuildsFolderManifestWithHashes)
 {
     const auto source = test_root() / "source";
@@ -168,6 +213,62 @@ TEST_F(TransferReceiverTests, senderFramesRoundTripThroughStreamingReceiver)
               "second");
     EXPECT_EQ(send_progress.snapshot().state, TransferState::Completed);
     EXPECT_EQ(receive_progress.snapshot().state, TransferState::Completed);
+}
+
+TEST_F(TransferReceiverTests, senderNegotiatesAndResumesFromReceiverOffsets)
+{
+    const auto source = test_root() / "resume-source.bin";
+    const auto destination = test_root() / "received";
+    const std::string contents(900000, 'r');
+    write_file(source, contents);
+
+    const auto plan = TransferCatalog::plan_from_paths({source});
+    TransferReceiver receiver;
+    receiver.begin(plan.manifest, destination);
+    receiver.write_chunk(0, 0, contents.data(), 300000);
+
+    TransferSender sender;
+    std::vector<fs::path> results;
+    sender.send(
+        plan,
+        [&](const TransferFrame& frame) {
+            auto completed = receiver.handle_frame(frame, destination);
+            if (!completed.empty()) {
+                results = std::move(completed);
+            }
+        },
+        {},
+        [&](const TransferManifest&) {
+            return receiver.resume_offsets();
+        });
+
+    ASSERT_EQ(results.size(), 1u);
+    EXPECT_EQ(read_file(destination / "resume-source.bin"), contents);
+}
+
+TEST_F(TransferReceiverTests, lostFinalAcknowledgmentDoesNotDuplicateCommit)
+{
+    const auto source = test_root() / "once.txt";
+    const auto destination = test_root() / "received";
+    write_file(source, "only once");
+    const auto plan = TransferCatalog::plan_from_paths({source});
+    TransferReceiver receiver;
+    TransferSender sender;
+
+    auto deliver = [&](const TransferFrame& frame) {
+        receiver.handle_frame(frame, destination);
+    };
+    sender.send(plan, deliver);
+    ASSERT_TRUE(fs::exists(destination / "once.txt"));
+
+    sender.send(
+        plan, deliver, {},
+        [&](const TransferManifest&) {
+            return receiver.resume_offsets();
+        });
+
+    EXPECT_TRUE(fs::exists(destination / "once.txt"));
+    EXPECT_FALSE(fs::exists(destination / "once (1).txt"));
 }
 
 TEST_F(TransferReceiverTests, createsAndVerifiesEmptyFiles)

@@ -77,6 +77,10 @@ void TransferReceiver::begin(const TransferManifest& manifest,
         throw std::invalid_argument("transfer destination is not a directory");
     }
 
+    completed_transfer_id_.clear();
+    completed_manifest_wire_.clear();
+    completed_offsets_.clear();
+    completed_results_.clear();
     destination_ = destination;
     partial_base_ = destination_ / ".inputleap-partials";
     if (fs::exists(partial_base_) && fs::is_symlink(partial_base_)) {
@@ -141,10 +145,19 @@ void TransferReceiver::begin(const TransferManifest& manifest,
 
 std::vector<std::uint64_t> TransferReceiver::resume_offsets() const
 {
-    if (!active_) {
-        throw std::logic_error("no transfer is active");
+    if (active_) {
+        return offsets_;
     }
-    return offsets_;
+    if (!completed_transfer_id_.empty()) {
+        return completed_offsets_;
+    }
+    throw std::logic_error("no transfer resume state is available");
+}
+
+bool TransferReceiver::has_transfer(const std::string& transfer_id) const
+{
+    return (active_ && manifest_.transfer_id() == transfer_id) ||
+           (!active_ && completed_transfer_id_ == transfer_id);
 }
 
 fs::path TransferReceiver::entry_staging_path(std::size_t entry_index) const
@@ -267,6 +280,14 @@ std::vector<fs::path> TransferReceiver::complete()
     if (progress_ != nullptr) {
         progress_->complete();
     }
+    completed_transfer_id_ = manifest_.transfer_id();
+    completed_manifest_wire_ = manifest_.serialize();
+    completed_offsets_.clear();
+    completed_offsets_.reserve(manifest_.entries().size());
+    for (const auto& entry : manifest_.entries()) {
+        completed_offsets_.push_back(entry.size);
+    }
+    completed_results_ = results;
     reset_state();
     return results;
 }
@@ -298,14 +319,41 @@ std::vector<fs::path> TransferReceiver::handle_frame(
         if (!TransferManifest::deserialize(frame.payload, manifest, &error)) {
             throw std::invalid_argument(error);
         }
-        begin(manifest, destination);
+        if (active_) {
+            if (manifest.transfer_id() != manifest_.transfer_id() ||
+                manifest.serialize() != manifest_.serialize()) {
+                throw std::logic_error(
+                    "a different transfer is already active");
+            }
+        }
+        else if (manifest.transfer_id() == completed_transfer_id_ &&
+                 manifest.serialize() == completed_manifest_wire_) {
+            // The sender may have lost the final acknowledgment after this
+            // transfer was committed. Keep the completed offsets available so
+            // it can finish without creating a duplicate destination item.
+        }
+        else {
+            begin(manifest, destination);
+        }
         return {};
     }
 
+    if (!active_ && frame.transfer_id == completed_transfer_id_) {
+        if (frame.type == TransferFrameType::EntryComplete) {
+            return {};
+        }
+        if (frame.type == TransferFrameType::TransferComplete) {
+            return completed_results_;
+        }
+        if (frame.type == TransferFrameType::Cancel) {
+            return {};
+        }
+        throw std::logic_error(
+            "completed transfer received unexpected data");
+    }
     if (!active_ || frame.transfer_id != manifest_.transfer_id()) {
         throw std::logic_error("transfer frame does not match an active transfer");
     }
-
     switch (frame.type) {
     case TransferFrameType::Chunk:
         write_chunk(frame.entry_index, frame.offset, frame.payload.data(),
