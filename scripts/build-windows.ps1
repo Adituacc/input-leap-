@@ -6,7 +6,7 @@ param(
     [string] $OpenSslRoot,
     [string] $BonjourRoot,
 
-    [string] $VersionDescription = "dragdrop-final1",
+    [string] $VersionDescription = "folder-dragdrop-final1",
 
     [switch] $SkipTests
 )

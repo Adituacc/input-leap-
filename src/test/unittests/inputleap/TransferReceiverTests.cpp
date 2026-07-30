@@ -215,6 +215,61 @@ TEST_F(TransferReceiverTests, senderFramesRoundTripThroughStreamingReceiver)
     EXPECT_EQ(receive_progress.snapshot().state, TransferState::Completed);
 }
 
+TEST_F(TransferReceiverTests, preservesCompleteFolderTreesAsTopLevelItems)
+{
+    const auto first = test_root() / fs::u8path("extension-folder");
+    const auto second = test_root() / fs::u8path("assets");
+    const auto destination = test_root() / fs::u8path("received");
+    const std::string binary("\0\x01\x7f\xff", 4);
+
+    write_file(first / fs::u8path("manifest.json"),
+               R"({"manifest_version":3,"name":"Input Leap test"})");
+    write_file(first / fs::u8path(".gitignore"), "dist/\n");
+    write_file(first / fs::u8path("src") / fs::u8path("background.js"),
+               "export const ready = true;\n");
+    write_file(first / fs::u8path("src") / fs::u8path("nested") /
+                   fs::u8path("data.bin"),
+               binary);
+    fs::create_directories(first / fs::u8path("empty") /
+                           fs::u8path("keep-this-folder"));
+    write_file(second / fs::u8path(u8"icons") / fs::u8path(u8"café.txt"),
+               "unicode filename");
+
+    const auto plan = TransferCatalog::plan_from_paths({first, second});
+    TransferSender sender;
+    TransferReceiver receiver;
+    std::vector<fs::path> results;
+    sender.send(plan, [&](const TransferFrame& frame) {
+        auto completed = receiver.handle_frame(frame, destination);
+        if (!completed.empty()) {
+            results = std::move(completed);
+        }
+    });
+
+    ASSERT_EQ(results.size(), 2u);
+    EXPECT_EQ(results[0].filename(), fs::u8path("assets"));
+    EXPECT_EQ(results[1].filename(), fs::u8path("extension-folder"));
+    EXPECT_EQ(read_file(destination / fs::u8path("extension-folder") /
+                        fs::u8path("manifest.json")),
+              R"({"manifest_version":3,"name":"Input Leap test"})");
+    EXPECT_EQ(read_file(destination / fs::u8path("extension-folder") /
+                        fs::u8path(".gitignore")),
+              "dist/\n");
+    EXPECT_EQ(read_file(destination / fs::u8path("extension-folder") /
+                        fs::u8path("src") / fs::u8path("background.js")),
+              "export const ready = true;\n");
+    EXPECT_EQ(read_file(destination / fs::u8path("extension-folder") /
+                        fs::u8path("src") / fs::u8path("nested") /
+                        fs::u8path("data.bin")),
+              binary);
+    EXPECT_TRUE(fs::is_directory(
+        destination / fs::u8path("extension-folder") / fs::u8path("empty") /
+        fs::u8path("keep-this-folder")));
+    EXPECT_EQ(read_file(destination / fs::u8path("assets") /
+                        fs::u8path(u8"icons") / fs::u8path(u8"café.txt")),
+              "unicode filename");
+}
+
 TEST_F(TransferReceiverTests, senderNegotiatesAndResumesFromReceiverOffsets)
 {
     const auto source = test_root() / "resume-source.bin";

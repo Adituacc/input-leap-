@@ -1,5 +1,5 @@
 param(
-    [string] $Version = "3.0.3-dragdrop-final1"
+    [string] $Version = "3.0.3-folder-dragdrop-final1"
 )
 
 $ErrorActionPreference = "Stop"
