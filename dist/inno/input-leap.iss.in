@@ -94,7 +94,7 @@ begin
 		ResultCode);
 end;
 
-function PrepareToInstall(var NeedsRestart: Boolean): String;
+procedure StopRunningInputLeap;
 var
 	ResultCode: Integer;
 begin
@@ -111,7 +111,13 @@ begin
 	StopInputLeapProcess('input-leapc.exe');
 	StopInputLeapProcess('input-leapd.exe');
 	StopInputLeapProcess('{#MyAppExeName}');
-	Result := '';
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+	if CurStep = ssInstall then begin
+		StopRunningInputLeap;
+	end;
 end;
 
 function InitializeSetup(): boolean;
