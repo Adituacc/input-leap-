@@ -61,6 +61,27 @@ std::string activeDesktopName()
     return name;
 }
 
+bool should_auto_elevate_for_desktop(const std::string& desktop_name)
+{
+    // OpenInputDesktop can briefly fail during logon or a desktop transition.
+    // An unknown desktop must not be treated as the secure desktop: doing so
+    // permanently relaunched the server at high integrity after a reboot,
+    // which blocks OLE drag-and-drop to and from normal desktop applications.
+    return !desktop_name.empty() && desktop_name != "Default";
+}
+
+bool should_enable_ui_access(bool explicitly_elevated,
+                             bool automatically_elevated,
+                             bool native_drag_enabled)
+{
+    // A normal interactive process must keep the user's regular token. Giving
+    // it UIAccess changes its UIPI boundary and prevents Explorer/browsers from
+    // delivering IDataObject to InputLeap's OLE drag target. Preserve the
+    // legacy UIAccess behavior when native drag-and-drop is not requested.
+    return explicitly_elevated || automatically_elevated ||
+           !native_drag_enabled;
+}
+
 MSWindowsWatchdog::MSWindowsWatchdog(
     bool daemonized,
     bool autoDetectCommand,
@@ -285,20 +306,44 @@ MSWindowsWatchdog::startProcess()
     if (!m_daemonized) {
         createRet = doStartProcessAsSelf(m_command);
     } else {
-        m_autoElevated = activeDesktopName() != "Default";
+        const auto desktop_name = activeDesktopName();
+        m_autoElevated =
+            should_auto_elevate_for_desktop(desktop_name);
+        const bool launched_elevated =
+            m_elevateProcess || m_autoElevated;
+        const bool native_drag_enabled =
+            m_command.find("--enable-drag-drop") != std::string::npos;
 
         SECURITY_ATTRIBUTES sa{ 0 };
         HANDLE userToken = getUserToken(&sa);
-        m_elevateProcess = m_autoElevated ? m_autoElevated : m_elevateProcess;
-        m_autoElevated = false;
 
         // patch by Jack Zhou and Henry Tung
         // set UIAccess to fix Windows 8 GUI interaction
         // http://symless.com/spit/issues/details/3338/#c70
-        DWORD uiAccess = 1;
-        SetTokenInformation(userToken, TokenUIAccess, &uiAccess, sizeof(DWORD));
+        // Only elevated/secure-desktop launches need it. Setting UIAccess on a
+        // normal desktop launch breaks native OLE drag-and-drop across the
+        // process boundary.
+        DWORD uiAccess =
+            should_enable_ui_access(
+                m_elevateProcess, m_autoElevated, native_drag_enabled)
+                ? 1u
+                : 0u;
+        if (!SetTokenInformation(
+                userToken, TokenUIAccess, &uiAccess, sizeof(uiAccess))) {
+            LOG_WARN("could not set process UIAccess=%lu: %s",
+                     uiAccess,
+                     error_code_to_string_windows(GetLastError()).c_str());
+        }
 
         createRet = doStartProcessAsUser(m_command, userToken, &sa);
+        m_autoElevated = false;
+
+        LOG_INFO(
+            "interactive process launch policy: desktop=%s, elevated=%s, "
+            "uiAccess=%s",
+            desktop_name.empty() ? "<unknown>" : desktop_name.c_str(),
+            launched_elevated ? "yes" : "no",
+            uiAccess != 0 ? "yes" : "no");
     }
 
     if (!createRet) {
@@ -318,7 +363,7 @@ MSWindowsWatchdog::startProcess()
         m_processRunning = true;
         m_processFailures = 0;
 
-        LOG_DEBUG("started process, session=%i, elevated: %s, command=%s",
+        LOG_DEBUG("started process, session=%i, requested elevation: %s, command=%s",
             m_session.getActiveSessionId(),
             m_elevateProcess ? "yes" : "no",
             m_command.c_str());

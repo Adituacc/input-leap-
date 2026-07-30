@@ -1,0 +1,4 @@
+Fixed drag-and-drop stopping after a Windows restart by preventing an unknown
+desktop state from permanently elevating the background process. Native OLE
+drag capture now runs at the interactive user's integrity level, and duplicate
+GUI instances are prevented.

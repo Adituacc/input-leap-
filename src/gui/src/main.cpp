@@ -26,6 +26,7 @@
 
 #include <QtCore>
 #include <QtGui>
+#include <QLockFile>
 #include <QSettings>
 #include <QMessageBox>
 
@@ -87,6 +88,14 @@ int main(int argc, char* argv[])
     QCoreApplication::setApplicationName("InputLeap");
 
     QInputLeapApplication app(argc, argv);
+
+    QLockFile instanceLock(
+        QDir::temp().filePath(QStringLiteral("inputleap-gui.lock")));
+    instanceLock.setStaleLockTime(0);
+    if (!instanceLock.tryLock(100)) {
+        fprintf(stderr, "InputLeap is already running for this user.\n");
+        return 0;
+    }
 
 #if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
     app.setDesktopFileName(QStringLiteral("io.github.input_leap.input-leap"));

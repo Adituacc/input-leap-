@@ -6,7 +6,7 @@ param(
     [string] $OpenSslRoot,
     [string] $BonjourRoot,
 
-    [string] $VersionDescription = "transfer-manager-beta1",
+    [string] $VersionDescription = "dragdrop-final1",
 
     [switch] $SkipTests
 )

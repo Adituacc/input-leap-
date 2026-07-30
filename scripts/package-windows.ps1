@@ -1,5 +1,5 @@
 param(
-    [string] $Version = "3.0.3-transfer-manager-beta1"
+    [string] $Version = "3.0.3-dragdrop-final1"
 )
 
 $ErrorActionPreference = "Stop"

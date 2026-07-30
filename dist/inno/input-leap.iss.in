@@ -35,6 +35,8 @@ Compression=lzma
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
 UninstallDisplayIcon={app}\{#MyAppExeName}
+CloseApplications=force
+RestartApplications=no
 
 #include "scripts\lang\english.iss"
 
@@ -79,6 +81,39 @@ DependenciesDir="redist"
 #include "scripts\products\vcredist2017.iss"
 
 [Code]
+procedure StopInputLeapProcess(const ImageName: String);
+var
+	ResultCode: Integer;
+begin
+	Exec(
+		ExpandConstant('{sys}\taskkill.exe'),
+		'/im "' + ImageName + '" /f /t',
+		'',
+		SW_HIDE,
+		ewWaitUntilTerminated,
+		ResultCode);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+	ResultCode: Integer;
+begin
+	// Stop the old background service and every foreground component before
+	// replacing files. This also handles accidental duplicate GUI instances.
+	Exec(
+		ExpandConstant('{sys}\sc.exe'),
+		'stop {#MyAppServiceName}',
+		'',
+		SW_HIDE,
+		ewWaitUntilTerminated,
+		ResultCode);
+	StopInputLeapProcess('input-leaps.exe');
+	StopInputLeapProcess('input-leapc.exe');
+	StopInputLeapProcess('input-leapd.exe');
+	StopInputLeapProcess('{#MyAppExeName}');
+	Result := '';
+end;
+
 function InitializeSetup(): boolean;
 begin
 	// initialize windows version

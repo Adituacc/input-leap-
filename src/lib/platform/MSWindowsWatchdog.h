@@ -34,6 +34,13 @@ class Thread;
 class IpcLogOutputter;
 class IpcServer;
 
+// Process-launch policy is kept separate from the Windows API calls so the
+// restart-sensitive elevation behavior can be covered by unit tests.
+bool should_auto_elevate_for_desktop(const std::string& desktop_name);
+bool should_enable_ui_access(bool explicitly_elevated,
+                             bool automatically_elevated,
+                             bool native_drag_enabled);
+
 class MSWindowsWatchdog {
 public:
     MSWindowsWatchdog(
