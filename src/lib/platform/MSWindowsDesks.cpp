@@ -20,6 +20,7 @@
 #include "platform/MSWindowsDesks.h"
 
 #include "platform/MSWindowsScreen.h"
+#include "inputleap/CursorPosition.h"
 #include "inputleap/IScreenSaver.h"
 #include "inputleap/XScreen.h"
 #include "mt/Thread.h"
@@ -454,15 +455,22 @@ MSWindowsDesks::secondaryDeskProc(
 
 void MSWindowsDesks::deskMouseMove(std::int32_t x, std::int32_t y) const
 {
-    // when using absolute positioning with mouse_event(),
-    // the normalized device coordinates range over only
-    // the primary screen.
-    std::int32_t w = GetSystemMetrics(SM_CXSCREEN);
-    std::int32_t h = GetSystemMetrics(SM_CYSCREEN);
-    mouse_event(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE,
-                            (DWORD)((65535.0f * x) / (w - 1) + 0.5f),
-                            (DWORD)((65535.0f * y) / (h - 1) + 0.5f),
-                            0, 0);
+    // Input Leap advertises the complete Windows virtual desktop. Use the
+    // matching SendInput coordinate space so monitors left or above the
+    // primary display do not wrap and multi-monitor targets do not snap back
+    // onto the primary monitor.
+    INPUT input{};
+    input.type = INPUT_MOUSE;
+    input.mi.dx = static_cast<LONG>(normalize_absolute_cursor_coordinate(
+        x, m_x, m_w));
+    input.mi.dy = static_cast<LONG>(normalize_absolute_cursor_coordinate(
+        y, m_y, m_h));
+    input.mi.dwFlags =
+        MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
+
+    if (SendInput(1, &input, sizeof(input)) != 1 && !SetCursorPos(x, y)) {
+        LOG_WARN("failed to inject cursor position %d,%d", x, y);
+    }
 }
 
 void MSWindowsDesks::deskMouseRelativeMove(std::int32_t dx, std::int32_t dy) const

@@ -73,6 +73,8 @@ OSXScreen::OSXScreen(IEventQueue* events, bool isPrimary, bool autoShowHideCurso
 	m_isPrimary(isPrimary),
 	m_isOnScreen(m_isPrimary),
 	m_cursorPosValid(false),
+	m_xFractionalMove(0),
+	m_yFractionalMove(0),
 	MouseButtonEventMap(NumButtonIDs),
 	m_cursorHidden(false),
 	m_dragNumButtonsDown(0),
@@ -808,6 +810,8 @@ OSXScreen::enter()
     // Mark as on screen so other events are handled as on screen.
     // Mitigates https://github.com/input-leap/input-leap/issues/1043 from the bogus movement check
 	m_isOnScreen = true;
+	m_xFractionalMove = 0;
+	m_yFractionalMove = 0;
 
 	showCursor();
 
@@ -846,6 +850,8 @@ OSXScreen::canLeave()
 void
 OSXScreen::leave()
 {
+	m_xFractionalMove = 0;
+	m_yFractionalMove = 0;
     hideCursor();
 
 	if (isDraggingStarted()) {
@@ -1051,7 +1057,12 @@ OSXScreen::onMouseMove(CGFloat mx, CGFloat my)
 	CGFloat x = mx - m_xCursor;
 	CGFloat y = my - m_yCursor;
 
-	if ((x == 0 && y == 0) || (mx == m_xCenter && mx == m_yCenter)) {
+	if (x == 0 && y == 0) {
+		return true;
+	}
+	if (!m_isOnScreen && mx == m_xCenter && my == m_yCenter) {
+		m_xCursor = m_xCenter;
+		m_yCursor = m_yCenter;
 		return true;
 	}
 
@@ -1087,9 +1098,6 @@ OSXScreen::onMouseMove(CGFloat mx, CGFloat my)
 		else {
 			// send motion
 			// Accumulate together the move into the running total
-			static CGFloat m_xFractionalMove = 0;
-			static CGFloat m_yFractionalMove = 0;
-
 			m_xFractionalMove += x;
 			m_yFractionalMove += y;
 
@@ -1100,8 +1108,10 @@ OSXScreen::onMouseMove(CGFloat mx, CGFloat my)
 			// And keep only the fractional part
 			m_xFractionalMove -= intX;
 			m_yFractionalMove -= intY;
-            sendEvent(EventType::PRIMARY_SCREEN_MOTION_ON_SECONDARY,
-                      create_event_data<MotionInfo>(MotionInfo{intX, intY}));
+			if (intX != 0 || intY != 0) {
+                sendEvent(EventType::PRIMARY_SCREEN_MOTION_ON_SECONDARY,
+                          create_event_data<MotionInfo>(MotionInfo{intX, intY}));
+			}
 		}
 	}
 

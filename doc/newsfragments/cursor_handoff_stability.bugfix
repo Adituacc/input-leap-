@@ -1,0 +1,1 @@
+Fixed cursor jumps and jitter during macOS/Windows screen handoffs, including Windows multi-monitor layouts with displays left or above the primary monitor.

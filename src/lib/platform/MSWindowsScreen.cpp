@@ -1553,7 +1553,7 @@ void MSWindowsScreen::warpCursorNoFlush(std::int32_t x, std::int32_t y)
     // a high DPI setting. The check here is for Vista/7 login screen.
     // since this feature is mainly for client, so only check on client.
     if (!isPrimary()) {
-        if ((cursorPos.x != x) && (cursorPos.y != y)) {
+        if (cursorPos.x != x || cursorPos.y != y) {
             LOG_DEBUG("SetCursorPos did not work; using fakeMouseMove instead");
             LOG_DEBUG("cursor pos %d, %d expected pos %d, %d", cursorPos.x, cursorPos.y, x, y);
             // when at Vista/7 login screen, SetCursorPos does not work (which could be

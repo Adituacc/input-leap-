@@ -267,6 +267,8 @@ private:
     // mouse state
     mutable std::int32_t m_xCursor, m_yCursor;
     mutable bool m_cursorPosValid;
+    CGFloat m_xFractionalMove;
+    CGFloat m_yFractionalMove;
 
     /* FIXME: this data structure is explicitly marked mutable due
        to a need to track the state of buttons since the remote
