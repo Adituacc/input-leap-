@@ -87,6 +87,12 @@ TEST(TransferManifestTests, rejectsNonPortableDuplicateAndConflictingPaths)
     EXPECT_FALSE(manifest.validate());
 
     manifest = make_manifest();
+    auto case_collision = manifest.entries()[1];
+    case_collision.relative_path = "photos/IMAGE.PNG";
+    manifest.entries().push_back(case_collision);
+    EXPECT_FALSE(manifest.validate());
+
+    manifest = make_manifest();
     manifest.entries()[0].kind = TransferEntryKind::File;
     manifest.entries()[0].size = 1;
     manifest.entries()[0].sha256 =

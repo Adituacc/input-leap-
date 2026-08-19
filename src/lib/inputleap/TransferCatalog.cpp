@@ -21,16 +21,34 @@ namespace inputleap {
 
 namespace {
 
-std::string join_relative(const std::vector<std::string>& components)
+std::string portable_name_key(std::string value)
 {
-    std::string result;
-    for (const auto& component : components) {
-        if (!result.empty()) {
-            result += '/';
-        }
-        result += sanitize_drag_filename(component);
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) {
+                       return c >= 'A' && c <= 'Z'
+                                  ? static_cast<char>(c - 'A' + 'a')
+                                  : static_cast<char>(c);
+                   });
+    return value;
+}
+
+std::string add_name_suffix(const std::string& filename, unsigned suffix)
+{
+    const auto path = fs::u8path(filename);
+    return path.stem().u8string() + " (" + std::to_string(suffix) + ")" +
+           path.extension().u8string();
+}
+
+std::string allocate_portable_name(const std::string& source_name,
+                                   std::set<std::string>& used_names)
+{
+    const auto base = sanitize_drag_filename(source_name);
+    auto candidate = base;
+    for (unsigned suffix = 1;
+         !used_names.insert(portable_name_key(candidate)).second; ++suffix) {
+        candidate = add_name_suffix(base, suffix);
     }
-    return result;
+    return candidate;
 }
 
 void check_entry_budget(const TransferManifest& manifest)
@@ -61,6 +79,44 @@ void add_directory(TransferPlan& plan, const std::string& relative_path)
     entry.relative_path = relative_path;
     plan.manifest.entries().push_back(std::move(entry));
     plan.sources.emplace_back();
+}
+
+TransferEntryKind classify_file(const fs::path& path);
+
+void add_directory_contents(TransferPlan& plan, const fs::path& source,
+                            const std::string& relative_root)
+{
+    std::vector<fs::path> children;
+    for (fs::directory_iterator iterator(source), end; iterator != end;
+         ++iterator) {
+        children.push_back(iterator->path());
+    }
+    std::sort(children.begin(), children.end(),
+              [](const fs::path& left, const fs::path& right) {
+                  return left.filename().u8string() < right.filename().u8string();
+              });
+
+    // Windows resolves names case-insensitively and macOS names may contain
+    // characters that are replaced for portability. Allocate every sibling
+    // name from the same folded namespace so neither case-only names nor
+    // sanitized names can target the same destination item.
+    std::set<std::string> used_names;
+    for (const auto& path : children) {
+        if (fs::is_symlink(path)) {
+            throw std::invalid_argument("symbolic links cannot be transferred");
+        }
+
+        const auto portable_name =
+            allocate_portable_name(path.filename().u8string(), used_names);
+        const auto relative_path = relative_root + '/' + portable_name;
+        if (fs::is_directory(path)) {
+            add_directory(plan, relative_path);
+            add_directory_contents(plan, path, relative_path);
+        }
+        else if (fs::is_regular_file(path)) {
+            add_file(plan, path, relative_path, classify_file(path));
+        }
+    }
 }
 
 TransferEntryKind classify_file(const fs::path& path)
@@ -95,26 +151,7 @@ void add_path(TransferPlan& plan, const fs::path& source,
     }
 
     add_directory(plan, root_name);
-    for (fs::recursive_directory_iterator iterator(source), end;
-         iterator != end; ++iterator) {
-        const auto& path = iterator->path();
-        if (fs::is_symlink(path)) {
-            throw std::invalid_argument("symbolic links cannot be transferred");
-        }
-
-        const auto relative = fs::relative(path, source);
-        std::vector<std::string> components{root_name};
-        for (const auto& component : relative) {
-            components.push_back(component.u8string());
-        }
-        const auto safe_relative = join_relative(components);
-        if (fs::is_directory(path)) {
-            add_directory(plan, safe_relative);
-        }
-        else if (fs::is_regular_file(path)) {
-            add_file(plan, path, safe_relative, classify_file(path));
-        }
-    }
+    add_directory_contents(plan, source, root_name);
 }
 
 } // namespace
@@ -138,13 +175,9 @@ TransferPlan TransferCatalog::plan_from_paths(const std::vector<fs::path>& paths
         if (!fs::exists(source)) {
             throw std::invalid_argument("transfer source does not exist");
         }
-        auto root_name = sanitize_drag_filename(source.filename().u8string());
-        auto candidate = root_name;
-        unsigned suffix = 1;
-        while (!root_names.insert(candidate).second) {
-            candidate = root_name + " (" + std::to_string(suffix++) + ")";
-        }
-        add_path(plan, source, candidate);
+        const auto root_name =
+            allocate_portable_name(source.filename().u8string(), root_names);
+        add_path(plan, source, root_name);
     }
 
     std::string error;

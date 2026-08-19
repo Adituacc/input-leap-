@@ -7,6 +7,8 @@ between macOS and Windows.
 
 - One or several files keep their original contents and names.
 - Folders are recursively transferred with their directory structure.
+- Names that differ only by case or collapse to the same Windows-safe name are
+  kept as separate items with a numeric suffix before the file extension.
 - Images published directly by an application are materialized as an image
   file. macOS accepts PNG and TIFF; Windows accepts PNG and DIB/BMP.
 - HTTP or HTTPS links are materialized as `.url` shortcuts for Windows or

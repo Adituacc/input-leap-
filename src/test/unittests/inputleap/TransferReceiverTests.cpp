@@ -181,6 +181,49 @@ TEST_F(TransferReceiverTests, catalogBuildsFolderManifestWithHashes)
     EXPECT_TRUE(TransferManifest::is_transfer_id(manifest.transfer_id()));
 }
 
+TEST_F(TransferReceiverTests, catalogKeepsDuplicateTopLevelNamesUnique)
+{
+    const auto first = test_root() / "first" / "report.txt";
+    const auto second = test_root() / "second" / "report.txt";
+    write_file(first, "first report");
+    write_file(second, "second report");
+
+    const auto plan = TransferCatalog::plan_from_paths({first, second});
+    ASSERT_EQ(plan.manifest.entries().size(), 2u);
+    EXPECT_EQ(plan.manifest.entries()[0].relative_path, "report.txt");
+    EXPECT_EQ(plan.manifest.entries()[1].relative_path, "report (1).txt");
+}
+
+#ifndef _WIN32
+TEST_F(TransferReceiverTests, catalogKeepsSanitizedSiblingNamesUnique)
+{
+    const auto source = test_root() / "portable-names";
+    write_file(source / "report:final.txt", "colon");
+    write_file(source / "report?final.txt", "question");
+
+    const auto plan = TransferCatalog::plan_from_paths({source});
+    ASSERT_EQ(plan.manifest.entries().size(), 3u);
+    EXPECT_EQ(plan.manifest.entries()[1].relative_path,
+              "portable-names/report_final.txt");
+    EXPECT_EQ(plan.manifest.entries()[2].relative_path,
+              "portable-names/report_final (1).txt");
+
+    TransferSender sender;
+    TransferReceiver receiver;
+    const auto destination = test_root() / "received-portable-names";
+    sender.send(plan, [&](const TransferFrame& frame) {
+        receiver.handle_frame(frame, destination);
+    });
+
+    EXPECT_EQ(read_file(destination / "portable-names" /
+                        "report_final.txt"),
+              "colon");
+    EXPECT_EQ(read_file(destination / "portable-names" /
+                        "report_final (1).txt"),
+              "question");
+}
+#endif
+
 TEST_F(TransferReceiverTests, senderFramesRoundTripThroughStreamingReceiver)
 {
     const auto source = test_root() / "send-source";

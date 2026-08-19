@@ -37,6 +37,17 @@ bool is_hex(const std::string& value)
     });
 }
 
+std::string portable_path_key(std::string value)
+{
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char c) {
+                       return c >= 'A' && c <= 'Z'
+                                  ? static_cast<char>(c - 'A' + 'a')
+                                  : static_cast<char>(c);
+                   });
+    return value;
+}
+
 void append_u32(std::string& wire, std::uint32_t value)
 {
     wire.push_back(static_cast<char>((value >> 24) & 0xff));
@@ -211,8 +222,9 @@ bool TransferManifest::validate(std::string* error) const
             }
             component_start = separator + 1;
         }
-        if (!paths.emplace(entry.relative_path, entry.kind).second) {
-            set_error(error, "manifest contains duplicate paths");
+        if (!paths.emplace(portable_path_key(entry.relative_path), entry.kind)
+                 .second) {
+            set_error(error, "manifest contains paths that collide across platforms");
             return false;
         }
         if (entry.kind == TransferEntryKind::Directory) {
