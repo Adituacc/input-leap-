@@ -134,7 +134,7 @@ void PerformanceMetrics::log_summary() const
     }
 
     for (std::size_t index = 0;
-         index < static_cast<std::size_t>(PerformanceStage::COUNT);
+         index < static_cast<std::size_t>(PerformanceStage::STAGE_COUNT);
          ++index) {
         const auto stage = static_cast<PerformanceStage>(index);
         const auto value = snapshot(stage);
@@ -179,7 +179,7 @@ const char* performance_stage_name(PerformanceStage stage)
         return "client-protocol";
     case PerformanceStage::INPUT_INJECTION:
         return "input-injection";
-    case PerformanceStage::COUNT:
+    case PerformanceStage::STAGE_COUNT:
         break;
     }
     return "unknown";

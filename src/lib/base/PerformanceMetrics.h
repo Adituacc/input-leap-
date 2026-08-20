@@ -29,7 +29,7 @@ enum class PerformanceStage : std::size_t {
     SERVER_DISPATCH,
     CLIENT_PROTOCOL,
     INPUT_INJECTION,
-    COUNT
+    STAGE_COUNT
 };
 
 struct PerformanceSnapshot {
@@ -77,7 +77,7 @@ private:
                                     std::uint64_t numerator);
 
     std::atomic<bool> enabled_{false};
-    std::array<Metric, static_cast<std::size_t>(PerformanceStage::COUNT)> metrics_{};
+    std::array<Metric, static_cast<std::size_t>(PerformanceStage::STAGE_COUNT)> metrics_{};
 };
 
 std::uint64_t performance_timestamp_us();
