@@ -23,14 +23,16 @@
 
 Screen::Screen() :
     m_Pixmap(QPixmap(":res/icons/64x64/video-display.png")),
-    m_Swapped(false)
+    m_Swapped(false),
+    m_InvertScroll(false)
 {
     init();
 }
 
 Screen::Screen(const QString& name) :
     m_Pixmap(QPixmap(":res/icons/64x64/video-display.png")),
-    m_Swapped(false)
+    m_Swapped(false),
+    m_InvertScroll(false)
 {
     init();
     setName(name);
@@ -65,6 +67,7 @@ void Screen::loadSettings(QSettings& settings)
         return;
 
     setSwitchCornerSize(settings.value("switchCornerSize").toInt());
+    setInvertScroll(settings.value("invertScroll", false).toBool());
 
     readSettings<QString>(settings, aliases(), "alias", QString(""));
     readSettings<int>(settings, modifiers(), "modifier", Modifier::DefaultMod,
@@ -82,6 +85,7 @@ void Screen::saveSettings(QSettings& settings) const
         return;
 
     settings.setValue("switchCornerSize", switchCornerSize());
+    settings.setValue("invertScroll", invertScroll());
 
     writeSettings<QString>(settings, aliases(), "alias");
     writeSettings<int>(settings, modifiers(), "modifier");
@@ -115,6 +119,7 @@ QTextStream& Screen::writeScreensSection(QTextStream& outStream) const
     outStream << "\n";
 
     outStream << "\t\t" << "switchCornerSize = " << switchCornerSize() << "\n";
+    outStream << "\t\t" << "invertScroll = " << (invertScroll() ? "true" : "false") << "\n";
 
     return outStream;
 }
@@ -147,20 +152,21 @@ QDataStream& operator<<(QDataStream& outStream, const Screen& screen)
         << modifiers
         << screen.switchCorners()
         << screen.fixes()
+        << screen.invertScroll()
         ;
 }
 
 QDataStream& operator>>(QDataStream& inStream, Screen& screen)
 {
     QList<int> modifiers;
-    return inStream
+    inStream
         >> screen.m_Name
         >> screen.m_SwitchCornerSize
         >> screen.m_Aliases
         >> modifiers
         >> screen.m_SwitchCorners
         >> screen.m_Fixes
-        ;
+        >> screen.m_InvertScroll;
 
     screen.m_Modifiers.clear();
 #if QT_VERSION >= QT_VERSION_CHECK(6,0,0)

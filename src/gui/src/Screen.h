@@ -67,6 +67,7 @@ class Screen : public BaseConfig
         QTextStream& writeAliasesSection(QTextStream& outStream) const;
 
         bool swapped() const { return m_Swapped; }
+        bool invertScroll() const { return m_InvertScroll; }
         QString& name() { return m_Name; }
         void setName(const QString& name) { m_Name = name; }
 
@@ -85,6 +86,7 @@ class Screen : public BaseConfig
         void setFix(Fix f, bool on) { m_Fixes[static_cast<int>(f)] = on; }
         QList<bool>& fixes() { return m_Fixes; }
         void setSwapped(bool on) { m_Swapped = on; }
+        void setInvertScroll(bool on) { m_InvertScroll = on; }
 
     private:
         QPixmap m_Pixmap;
@@ -97,6 +99,7 @@ class Screen : public BaseConfig
         QList<bool> m_Fixes;
 
         bool m_Swapped;
+        bool m_InvertScroll;
 };
 
 QDataStream& operator<<(QDataStream& outStream, const Screen& screen);

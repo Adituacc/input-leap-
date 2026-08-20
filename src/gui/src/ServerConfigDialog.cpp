@@ -49,6 +49,7 @@ ServerConfigDialog::ServerConfigDialog(QWidget* parent, ServerConfig& config, co
 
     ui_->m_pCheckBoxSwitchDoubleTap->setChecked(serverConfig().hasSwitchDoubleTap());
     ui_->m_pSpinBoxSwitchDoubleTap->setValue(serverConfig().switchDoubleTap());
+    ui_->m_pSpinBoxSwitchHysteresis->setValue(serverConfig().switchHysteresis());
 
     ui_->m_pCheckBoxCornerTopLeft->setChecked(serverConfig().switchCorner(BaseConfig::SwitchCorner::TopLeft));
     ui_->m_pCheckBoxCornerTopRight->setChecked(serverConfig().switchCorner(BaseConfig::SwitchCorner::TopRight));
@@ -88,6 +89,7 @@ void ServerConfigDialog::accept()
 
     serverConfig().haveSwitchDoubleTap(ui_->m_pCheckBoxSwitchDoubleTap->isChecked());
     serverConfig().setSwitchDoubleTap(ui_->m_pSpinBoxSwitchDoubleTap->value());
+    serverConfig().setSwitchHysteresis(ui_->m_pSpinBoxSwitchHysteresis->value());
 
     serverConfig().setSwitchCorner(BaseConfig::SwitchCorner::TopLeft,
                                    ui_->m_pCheckBoxCornerTopLeft->isChecked());

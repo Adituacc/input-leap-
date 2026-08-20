@@ -25,7 +25,7 @@
        </sizepolicy>
       </property>
       <property name="title">
-       <string>Ser&amp;ver (share this computer's mouse and keyboard):</string>
+       <string>&amp;Control other computers</string>
       </property>
       <property name="checkable">
        <bool>true</bool>
@@ -70,7 +70,7 @@
          <item>
           <widget class="QPushButton" name="m_pButtonConfigureServer">
            <property name="text">
-            <string>&amp;Configure Server...</string>
+            <string>&amp;Arrange Screens &amp;&amp; Controls...</string>
            </property>
           </widget>
          </item>
@@ -139,7 +139,7 @@
        </sizepolicy>
       </property>
       <property name="title">
-       <string>&amp;Client (use another computer's mouse and keyboard):</string>
+       <string>&amp;Let another computer control this one</string>
       </property>
       <property name="checkable">
        <bool>true</bool>
@@ -168,7 +168,7 @@
        <item row="2" column="0">
         <widget class="QLabel" name="m_pLabelServerName">
          <property name="text">
-          <string>Server I&amp;P:</string>
+          <string>Controlling computer:</string>
          </property>
          <property name="buddy">
           <cstring>m_pLineEditHostname</cstring>
@@ -181,7 +181,7 @@
        <item row="3" column="0">
         <widget class="QCheckBox" name="m_pCheckBoxAutoConfig">
          <property name="text">
-          <string>Auto config</string>
+          <string>Find automatically</string>
          </property>
         </widget>
        </item>
@@ -198,6 +198,13 @@
            <width>120</width>
            <height>0</height>
           </size>
+         </property>
+        </widget>
+       </item>
+       <item row="4" column="1">
+        <widget class="QPushButton" name="m_pButtonTestConnection">
+         <property name="text">
+          <string>Test connection</string>
          </property>
         </widget>
        </item>
@@ -322,8 +329,23 @@
       </item>
       <item>
        <widget class="QLabel" name="m_pStatusLabel">
+        <property name="font">
+         <font>
+          <bold>true</bold>
+         </font>
+        </property>
         <property name="text">
          <string>Ready</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="m_pStatusDetail">
+        <property name="text">
+         <string>Choose how this computer participates, then start sharing.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
         </property>
        </widget>
       </item>
@@ -339,6 +361,20 @@
          </size>
         </property>
        </spacer>
+      </item>
+      <item>
+       <widget class="QPushButton" name="m_pButtonPermissions">
+        <property name="text">
+         <string>Open Permissions</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="m_pButtonDiagnostics">
+        <property name="text">
+         <string>Diagnostics...</string>
+        </property>
+       </widget>
       </item>
       <item>
        <widget class="QPushButton" name="m_pButtonReload">

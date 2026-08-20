@@ -88,6 +88,7 @@ ScreenSettingsDialog::ScreenSettingsDialog(QWidget* parent, Screen* pScreen) :
     ui_->m_pCheckBoxScrollLock->setChecked(m_pScreen->fix(Screen::Fix::ScrollLock));
     ui_->m_pCheckBoxXTest->setChecked(m_pScreen->fix(Screen::Fix::XTest));
     ui_->m_pCheckBoxPreserveFocus->setChecked(m_pScreen->fix(Screen::Fix::PreserveFocus));
+    ui_->m_pCheckBoxInvertScroll->setChecked(m_pScreen->invertScroll());
 }
 
 void ScreenSettingsDialog::accept()
@@ -141,6 +142,7 @@ void ScreenSettingsDialog::accept()
     m_pScreen->setFix(Screen::Fix::ScrollLock, ui_->m_pCheckBoxScrollLock->isChecked());
     m_pScreen->setFix(Screen::Fix::XTest, ui_->m_pCheckBoxXTest->isChecked());
     m_pScreen->setFix(Screen::Fix::PreserveFocus, ui_->m_pCheckBoxPreserveFocus->isChecked());
+    m_pScreen->setInvertScroll(ui_->m_pCheckBoxInvertScroll->isChecked());
 
     QDialog::accept();
 }

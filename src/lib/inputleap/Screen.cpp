@@ -19,6 +19,7 @@
 #include "inputleap/Screen.h"
 #include "inputleap/IPlatformScreen.h"
 #include "inputleap/protocol_types.h"
+#include "inputleap/ScrollDirection.h"
 #include "base/Log.h"
 #include "base/PerformanceMetrics.h"
 #include "base/IEventQueue.h"
@@ -35,7 +36,8 @@ Screen::Screen(std::unique_ptr<IPlatformScreen> platform_screen, IEventQueue* ev
     m_fakeInput(false),
     m_events(events),
     m_mock(false),
-    m_enableDragDrop(false)
+    m_enableDragDrop(false),
+    m_invertScroll(false)
 {
     // reset options
     resetOptions();
@@ -216,6 +218,7 @@ Screen::mouseDown(ButtonID button)
 {
     ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_INJECTION};
     m_screen->fakeMouseButton(button, true);
+    m_pressedMouseButtons.press(button);
 }
 
 void
@@ -223,6 +226,7 @@ Screen::mouseUp(ButtonID button)
 {
     ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_INJECTION};
     m_screen->fakeMouseButton(button, false);
+    m_pressedMouseButtons.release(button);
 }
 
 void Screen::mouseMove(std::int32_t x, std::int32_t y)
@@ -243,7 +247,8 @@ void Screen::mouseWheel(std::int32_t xDelta, std::int32_t yDelta)
 {
     ScopedPerformanceTimer performance_timer{PerformanceStage::INPUT_INJECTION};
     assert(!m_isPrimary);
-    m_screen->fakeMouseWheel(xDelta, yDelta);
+    const auto delta = apply_scroll_direction(xDelta, yDelta, m_invertScroll);
+    m_screen->fakeMouseWheel(delta.first, delta.second);
 }
 
 void
@@ -251,6 +256,7 @@ Screen::resetOptions()
 {
     // reset options
     m_halfDuplex = 0;
+    m_invertScroll = false;
 
     // if screen saver synchronization was off then turn it on since
     // that's the default option state.
@@ -270,7 +276,8 @@ Screen::setOptions(const OptionsList& options)
 {
     // update options
     bool oldScreenSaverSync = m_screenSaverSync;
-    for (std::uint32_t i = 0, n = static_cast<std::uint32_t>(options.size()); i < n; i += 2) {
+    for (std::uint32_t i = 0, n = static_cast<std::uint32_t>(options.size());
+         i + 1 < n; i += 2) {
         if (options[i] == kOptionScreenSaverSync) {
             m_screenSaverSync = (options[i + 1] != 0);
             LOG_DEBUG1("screen saver synchronization %s", m_screenSaverSync ? "on" : "off");
@@ -301,6 +308,10 @@ Screen::setOptions(const OptionsList& options)
                 m_halfDuplex &= ~KeyModifierScrollLock;
             }
             LOG_DEBUG1("half-duplex scroll-lock %s", ((m_halfDuplex & KeyModifierScrollLock) != 0) ? "on" : "off");
+        }
+        else if (options[i] == kOptionInvertScroll) {
+            m_invertScroll = (options[i + 1] != 0);
+            LOG_DEBUG1("remote scroll direction %s", m_invertScroll ? "reversed" : "standard");
         }
     }
 
@@ -556,6 +567,14 @@ Screen::leavePrimary()
 void
 Screen::leaveSecondary()
 {
+    // A network loss or process restart can prevent the matching button-up
+    // packet from arriving. Release every button injected on this screen so
+    // applications cannot remain stuck in a drag after reconnecting.
+    for (const auto button : m_pressedMouseButtons.buttons()) {
+        m_screen->fakeMouseButton(button, false);
+    }
+    m_pressedMouseButtons.clear();
+
     // release any keys we think are still down
     m_screen->fakeAllKeysUp();
 }

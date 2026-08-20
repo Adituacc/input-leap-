@@ -11,14 +11,21 @@ set (CMAKE_INCLUDE_CURRENT_DIR ON)
 # files that are used both in tests and the app
 set(GUI_COMMON_SOURCE_FILES
     src/Action.cpp
+    src/ConnectionStatus.cpp
+    src/DiagnosticBundle.cpp
     src/Hotkey.cpp
     src/KeySequence.cpp
+    src/UpdateChecker.cpp
 )
 
 set(GUI_COMMON_HEADER_FILES
     src/Action.h
+    src/AppConnectionState.h
+    src/ConnectionStatus.h
+    src/DiagnosticBundle.h
     src/Hotkey.h
     src/KeySequence.h
+    src/UpdateChecker.h
 )
 
 set(GUI_SOURCE_FILES
@@ -258,8 +265,11 @@ endif()
 if(INPUTLEAP_BUILD_TESTS)
     set(GUI_TEST_SOURCE_FILES
         test/AppConfigTests.cpp
+        test/ConnectionStatusTests.cpp
+        test/DiagnosticBundleTests.cpp
         test/KeySequenceTests.cpp
         test/HotkeyTests.cpp
+        test/UpdateCheckerTests.cpp
         test/main.cpp
         src/AppConfig.cpp
     )

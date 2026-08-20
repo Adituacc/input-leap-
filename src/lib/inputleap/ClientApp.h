@@ -23,6 +23,7 @@
 #include "net/Fwd.h"
 #include "inputleap/App.h"
 #include "ClientArgs.h"
+#include "ReconnectBackoff.h"
 
 namespace inputleap {
 
@@ -82,6 +83,8 @@ private:
     Client* m_client;
     std::unique_ptr<inputleap::Screen> m_clientScreen;
     NetworkAddress* m_serverAddress;
+    ReconnectBackoff reconnect_backoff_;
+    bool restart_scheduled_ = false;
 };
 
 } // namespace inputleap

@@ -26,6 +26,7 @@
 #include "inputleap/key_types.h"
 #include "inputleap/mouse_types.h"
 #include "inputleap/option_types.h"
+#include "inputleap/PressedInputState.h"
 #include "base/Fwd.h"
 #include <memory>
 
@@ -343,6 +344,8 @@ private:
 
     bool m_mock;
     bool m_enableDragDrop;
+    bool m_invertScroll = false;
+    PressedMouseButtons m_pressedMouseButtons;
 };
 
 }

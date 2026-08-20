@@ -702,6 +702,9 @@ Config::readSectionOptions(ConfigReadContext& s)
 		else if (name == "switchDoubleTap") {
 			addOption("", kOptionScreenSwitchTwoTap, s.parseInt(value));
 		}
+		else if (name == "switchHysteresis") {
+			addOption("", kOptionScreenSwitchHysteresis, s.parseInt(value));
+		}
 		else if (name == "switchNeedsShift") {
 			addOption("", kOptionScreenSwitchNeedsShift, s.parseBoolean(value));
 		}
@@ -839,6 +842,10 @@ Config::readSectionScreens(ConfigReadContext& s)
 			}
 			else if (name == "halfDuplexScrollLock") {
 				addOption(screen, kOptionHalfDuplexScrollLock,
+					s.parseBoolean(value));
+			}
+			else if (name == "invertScroll") {
+				addOption(screen, kOptionInvertScroll,
 					s.parseBoolean(value));
 			}
 			else if (name == "shift") {
@@ -1275,6 +1282,9 @@ Config::getOptionName(OptionID id)
 	if (id == kOptionHalfDuplexScrollLock) {
 		return "halfDuplexScrollLock";
 	}
+	if (id == kOptionInvertScroll) {
+		return "invertScroll";
+	}
 	if (id == kOptionModifierMapForShift) {
 		return "shift";
 	}
@@ -1307,6 +1317,9 @@ Config::getOptionName(OptionID id)
 	}
 	if (id == kOptionScreenSwitchTwoTap) {
 		return "switchDoubleTap";
+	}
+	if (id == kOptionScreenSwitchHysteresis) {
+		return "switchHysteresis";
 	}
 	if (id == kOptionScreenSwitchNeedsShift) {
 		return "switchNeedsShift";
@@ -1346,6 +1359,7 @@ std::string Config::getOptionValue(OptionID id, OptionValue value)
 	if (id == kOptionHalfDuplexCapsLock ||
 		id == kOptionHalfDuplexNumLock ||
 		id == kOptionHalfDuplexScrollLock ||
+		id == kOptionInvertScroll ||
 		id == kOptionScreenSwitchNeedsShift ||
 		id == kOptionScreenSwitchNeedsControl ||
 		id == kOptionScreenSwitchNeedsAlt ||
@@ -1354,8 +1368,7 @@ std::string Config::getOptionValue(OptionID id, OptionValue value)
 		id == kOptionRelativeMouseMoves ||
 		id == kOptionWin32KeepForeground ||
 		id == kOptionScreenPreserveFocus ||
-		id == kOptionClipboardSharing ||
-		id == kOptionClipboardSharingSize) {
+		id == kOptionClipboardSharing) {
 		return (value != 0) ? "true" : "false";
 	}
 	if (id == kOptionModifierMapForShift ||
@@ -1390,7 +1403,9 @@ std::string Config::getOptionValue(OptionID id, OptionValue value)
 	if (id == kOptionHeartbeat ||
 		id == kOptionScreenSwitchCornerSize ||
 		id == kOptionScreenSwitchDelay ||
-		id == kOptionScreenSwitchTwoTap) {
+		id == kOptionScreenSwitchTwoTap ||
+		id == kOptionScreenSwitchHysteresis ||
+		id == kOptionClipboardSharingSize) {
 		return inputleap::string::sprintf("%d", value);
 	}
 	if (id == kOptionScreenSwitchCorners) {

@@ -54,6 +54,7 @@ class ServerConfig : public BaseConfig
         int switchDelay() const { return m_SwitchDelay; }
         bool hasSwitchDoubleTap() const { return m_HasSwitchDoubleTap; }
         int switchDoubleTap() const { return m_SwitchDoubleTap; }
+        int switchHysteresis() const { return m_SwitchHysteresis; }
         bool switchCorner(SwitchCorner c) const { return m_SwitchCorners[static_cast<int>(c)]; }
         int switchCornerSize() const { return m_SwitchCornerSize; }
         const QList<bool>& switchCorners() const { return m_SwitchCorners; }
@@ -87,6 +88,7 @@ class ServerConfig : public BaseConfig
         void setSwitchDelay(int val) { m_SwitchDelay = val; }
         void haveSwitchDoubleTap(bool on) { m_HasSwitchDoubleTap = on; }
         void setSwitchDoubleTap(int val) { m_SwitchDoubleTap = val; }
+        void setSwitchHysteresis(int val) { m_SwitchHysteresis = val; }
         void setSwitchCorner(SwitchCorner c, bool on) { m_SwitchCorners[static_cast<int>(c)] = on; }
         void setSwitchCornerSize(int val) { m_SwitchCornerSize = val; }
         void setIgnoreAutoConfigClient(bool on) { m_IgnoreAutoConfigClient = on; }
@@ -119,6 +121,7 @@ class ServerConfig : public BaseConfig
         int m_SwitchDelay;
         bool m_HasSwitchDoubleTap;
         int m_SwitchDoubleTap;
+        int m_SwitchHysteresis;
         int m_SwitchCornerSize;
         QList<bool> m_SwitchCorners;
         std::vector<Hotkey> m_Hotkeys;

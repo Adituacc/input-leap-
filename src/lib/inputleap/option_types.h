@@ -48,6 +48,7 @@ typedef std::vector<std::uint32_t> OptionsList;
 static const OptionID    kOptionHalfDuplexCapsLock        = OPTION_CODE("HDCL");
 static const OptionID    kOptionHalfDuplexNumLock        = OPTION_CODE("HDNL");
 static const OptionID    kOptionHalfDuplexScrollLock        = OPTION_CODE("HDSL");
+static const OptionID    kOptionInvertScroll              = OPTION_CODE("SCRV");
 static const OptionID    kOptionModifierMapForShift        = OPTION_CODE("MMFS");
 static const OptionID    kOptionModifierMapForControl    = OPTION_CODE("MMFC");
 static const OptionID    kOptionModifierMapForAlt        = OPTION_CODE("MMFA");
@@ -59,6 +60,7 @@ static const OptionID    kOptionScreenSwitchCorners        = OPTION_CODE("SSCM")
 static const OptionID    kOptionScreenSwitchCornerSize    = OPTION_CODE("SSCS");
 static const OptionID    kOptionScreenSwitchDelay        = OPTION_CODE("SSWT");
 static const OptionID    kOptionScreenSwitchTwoTap        = OPTION_CODE("SSTT");
+static const OptionID    kOptionScreenSwitchHysteresis   = OPTION_CODE("SSHY");
 static const OptionID    kOptionScreenSwitchNeedsShift   = OPTION_CODE("SSNS");
 static const OptionID    kOptionScreenSwitchNeedsControl = OPTION_CODE("SSNC");
 static const OptionID    kOptionScreenSwitchNeedsAlt     = OPTION_CODE("SSNA");

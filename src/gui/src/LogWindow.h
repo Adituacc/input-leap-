@@ -39,6 +39,7 @@ class LogWindow : public QDialog
         void appendInfo(const QString& text);
         void appendDebug(const QString& text);
         void appendError(const QString& text);
+        QString contents() const;
 
     private slots:
         void on_m_pButtonHide_clicked();

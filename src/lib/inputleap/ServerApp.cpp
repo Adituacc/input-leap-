@@ -293,6 +293,7 @@ void ServerApp::handle_client_connected(const Event&, ClientListener* listener)
     ClientProxy* client = listener->getNextClient();
     if (client != nullptr) {
         server_->adoptClient(client);
+        LOG_PRINT("INPUTLEAP_STATUS|connected|A remote computer connected");
         updateStatus();
     }
 }
@@ -566,6 +567,7 @@ ServerApp::startServer()
         // using CLOG_PRINT here allows the GUI to see that the server is started
         // regardless of which log level is set
         LOG_PRINT("started server (%s), waiting for clients", family);
+        LOG_PRINT("INPUTLEAP_STATUS|connected|Ready for other computers on %s", family);
         m_serverState = kStarted;
         return true;
     }
@@ -584,7 +586,8 @@ ServerApp::startServer()
     if (args().m_restartable) {
         // install a timer and handler to retry later
         assert(m_timer == nullptr);
-        LOG_DEBUG("retry in %.0f seconds", retryTime);
+        LOG_PRINT("INPUTLEAP_STATUS|reconnecting|Retrying the listener in %.1f seconds", retryTime);
+        LOG_DEBUG("retry in %.1f seconds", retryTime);
         m_timer = m_events->newOneShotTimer(retryTime, nullptr);
         m_events->add_handler(EventType::TIMER, m_timer,
                               [this](const auto& e){ handle_retry(); });

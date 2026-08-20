@@ -84,6 +84,7 @@ Server::Server(
 	m_switchTwoTapEngaged(false),
 	m_switchTwoTapArmed(false),
 	m_switchTwoTapZone(3),
+	m_switchHysteresis(8),
 	m_switchNeedsShift(false),
 	m_switchNeedsControl(false),
 	m_switchNeedsAlt(false),
@@ -451,6 +452,8 @@ void Server::switchScreen(BaseClientProxy* dst, std::int32_t x, std::int32_t y, 
 
 	LOG_INFO("switch from \"%s\" to \"%s\" at %d,%d", getName(m_active).c_str(), getName(dst).c_str(), x, y);
 
+	const auto handoffDirection = m_switchDir;
+
 	// stop waiting to switch
 	stopSwitch();
 
@@ -496,6 +499,9 @@ void Server::switchScreen(BaseClientProxy* dst, std::int32_t x, std::int32_t y, 
 								m_primaryClient->getToggleMask(),
 								forScreensaver);
 
+		m_handoffGuard.begin(handoffDirection);
+		m_handoffTimer.reset();
+
 		if (m_enableClipboard) {
 			// send the clipboard data to new active screen
 			for (ClipboardID id = 0; id < kClipboardEnd; ++id) {
@@ -539,11 +545,11 @@ float Server::mapToFraction(BaseClientProxy* client, EDirection dir, std::int32_
 	switch (dir) {
 	case kLeft:
 	case kRight:
-		return static_cast<float>(y - sy + 0.5f) / static_cast<float>(sh);
+		return static_cast<float>(cursor_edge_fraction(y, sy, sh));
 
 	case kTop:
 	case kBottom:
-		return static_cast<float>(x - sx + 0.5f) / static_cast<float>(sw);
+		return static_cast<float>(cursor_edge_fraction(x, sx, sw));
 
 	case kNoDirection:
 		assert(0 && "bad direction");
@@ -562,12 +568,12 @@ void Server::mapToPixel(BaseClientProxy* client, EDirection dir, float f, std::i
 	switch (dir) {
 	case kLeft:
 	case kRight:
-		y = static_cast<std::int32_t>(f * sh) + sy;
+		y = cursor_coordinate_from_fraction(f, sy, sh);
 		break;
 
 	case kTop:
 	case kBottom:
-		x = static_cast<std::int32_t>(f * sw) + sx;
+		x = cursor_coordinate_from_fraction(f, sx, sw);
 		break;
 
 	case kNoDirection:
@@ -744,50 +750,10 @@ BaseClientProxy* Server::mapToNeighbor(BaseClientProxy* src, EDirection srcSide,
 void Server::avoidJumpZone(BaseClientProxy* dst, EDirection dir, std::int32_t& x,
                            std::int32_t& y) const
 {
-	// we only need to avoid jump zones on the primary screen
-	if (dst != m_primaryClient) {
-		return;
-	}
-
-    const std::string dstName(getName(dst));
 	std::int32_t dx, dy, dw, dh;
 	dst->getShape(dx, dy, dw, dh);
-	float t = mapToFraction(dst, dir, x, y);
-	std::int32_t z = getJumpZoneSize(dst);
-
-	// move in far enough to avoid the jump zone.  if entering a side
-	// that doesn't have a neighbor (i.e. an asymmetrical side) then we
-	// don't need to move inwards because that side can't provoke a jump.
-	switch (dir) {
-	case kLeft:
-		if (!m_config->getNeighbor(dstName, kRight, t, nullptr).empty() &&
-			x > dx + dw - 1 - z)
-			x = dx + dw - 1 - z;
-		break;
-
-	case kRight:
-		if (!m_config->getNeighbor(dstName, kLeft, t, nullptr).empty() &&
-			x < dx + z)
-			x = dx + z;
-		break;
-
-	case kTop:
-		if (!m_config->getNeighbor(dstName, kBottom, t, nullptr).empty() &&
-			y > dy + dh - 1 - z)
-			y = dy + dh - 1 - z;
-		break;
-
-	case kBottom:
-		if (!m_config->getNeighbor(dstName, kTop, t, nullptr).empty() &&
-			y < dy + z)
-			y = dy + z;
-		break;
-
-	case kNoDirection:
-		assert(0 && "bad direction");
-    default:
-        break;
-	}
+	const auto inset = (std::max)(m_switchHysteresis, getJumpZoneSize(dst));
+	inset_cursor_on_entry(CursorRect{dx, dy, dw, dh}, dir, inset, x, y);
 }
 
 bool Server::isSwitchOkay(BaseClientProxy* newScreen, EDirection dir, std::int32_t x,
@@ -1143,6 +1109,9 @@ Server::processOptions()
 				m_switchTwoTapDelay = 0.0;
 			}
 			stopSwitchTwoTap();
+		}
+		else if (id == kOptionScreenSwitchHysteresis) {
+			m_switchHysteresis = (std::max)(0, (std::min)(value, 64));
 		}
 		else if (id == kOptionScreenSwitchNeedsControl) {
 			m_switchNeedsControl = (value != 0);
@@ -1955,6 +1924,11 @@ void Server::onMouseMoveSecondary(std::int32_t dx, std::int32_t dy)
 	assert(m_active != nullptr);
 	if (m_active == m_primaryClient) {
 		// stale event -- we're actually on the primary screen
+		return;
+	}
+
+	if (m_handoffGuard.should_suppress(dx, dy, m_handoffTimer.getTime())) {
+		LOG_DEBUG2("suppressed post-handoff reverse motion %+d,%+d", dx, dy);
 		return;
 	}
 

@@ -172,6 +172,7 @@ bool TransferWindow::processLogLine(const QString& line)
             }
         }
         updateButtons();
+        publishActivity();
         return true;
     }
 
@@ -192,6 +193,34 @@ bool TransferWindow::processLogLine(const QString& line)
         return true;
     }
     return false;
+}
+
+void TransferWindow::publishActivity()
+{
+    int activeCount = 0;
+    qulonglong transferred = 0;
+    qulonglong total = 0;
+    for (auto iterator = records_.cbegin(); iterator != records_.cend(); ++iterator) {
+        if (!iterator->state.isEmpty() && !isTerminal(iterator->state)) {
+            ++activeCount;
+            transferred += iterator->transferred;
+            total += iterator->total;
+        }
+    }
+
+    if (activeCount == 0) {
+        Q_EMIT activityChanged(false, tr("All transfers are finished."));
+        return;
+    }
+
+    const int percent = total == 0
+                            ? 0
+                            : static_cast<int>(qMin<qulonglong>(
+                                  100, transferred * 100 / total));
+    Q_EMIT activityChanged(
+        true, tr("%1 active transfer(s), %2% complete.")
+                  .arg(activeCount)
+                  .arg(percent));
 }
 
 QString TransferWindow::decodeField(const QString& value)

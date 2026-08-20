@@ -13,6 +13,7 @@ B_BUILDTYPE="@CMAKE_BUILD_TYPE@"
 B_INPUTLEAPC="InputLeap.app/Contents/MacOS/input-leapc"
 B_INPUTLEAPS="InputLeap.app/Contents/MacOS/input-leaps"
 B_DMG="InputLeap-DragDrop-$B_VERSION.dmg"
+B_CODESIGN_IDENTITY="${INPUTLEAP_CODESIGN_IDENTITY:--}"
 
 # Colorized output
 info() { tput bold; echo "$@"; tput sgr0 ; }
@@ -36,6 +37,11 @@ info "Copying binaries into bundle"
 # Copy the folder instead of globbing unquoted path
 cp -r "$B_BINDIR" "$B_MACOS" || exit 1
 
+# Finder metadata and downloaded-file quarantine attributes make codesign
+# reject otherwise valid app bundles. They are packaging metadata, not app
+# content, so clear them before macdeployqt performs its first signature.
+xattr -cr InputLeap.app || exit 1
+
 DEPLOYQT=@QT_DEPLOY_TOOL@
 
 # Use macdeployqt to include libraries, then give the complete bundle a stable
@@ -44,23 +50,42 @@ DEPLOYQT=@QT_DEPLOY_TOOL@
 if [ "$B_BUILDTYPE" = "Release" ]; then
     info "Building Release disk image (dmg)"
     "$DEPLOYQT" InputLeap.app \
+    -no-codesign \
     -executable="$B_INPUTLEAPC" \
     -executable="$B_INPUTLEAPS" || exit 1
-    codesign --force --deep --sign - \
-        --identifier io.github.inputleap.dragdrop InputLeap.app || exit 1
-    codesign --verify --deep --strict InputLeap.app || exit 1
+    # Some synced/file-provider workspaces recreate Finder attributes as soon
+    # as they are removed. Sign and image a clean copy on the local temporary
+    # filesystem so those host-only attributes never enter the installer.
+    B_STAGE="$(mktemp -d "${TMPDIR:-/tmp}/inputleap-package.XXXXXX")" || exit 1
+    trap 'rm -rf "$B_STAGE"' EXIT
+    ditto --norsrc InputLeap.app "$B_STAGE/InputLeap.app" || exit 1
+    xattr -cr "$B_STAGE/InputLeap.app" || exit 1
+    if [ "$B_CODESIGN_IDENTITY" != "-" ]; then
+        B_CODESIGN_FLAGS="--options runtime --timestamp"
+    else
+        B_CODESIGN_FLAGS=""
+    fi
+    # shellcheck disable=SC2086
+    codesign --force --deep --sign "$B_CODESIGN_IDENTITY" $B_CODESIGN_FLAGS \
+        --identifier io.github.inputleap.dragdrop "$B_STAGE/InputLeap.app" || exit 1
+    codesign --verify --deep --strict "$B_STAGE/InputLeap.app" || exit 1
     rm -f "$B_DMG"
     hdiutil create -volname "InputLeap DragDrop" \
-        -srcfolder InputLeap.app -ov -format UDZO "$B_DMG" || exit 1
+        -srcfolder "$B_STAGE/InputLeap.app" -ov -format UDZO "$B_DMG" || exit 1
     success "Created $B_DMG"
 else
     warn "Disk image (dmg) only created for Release builds"
     info "Building debug bundle"
-    "$DEPLOYQT" InputLeap.app -no-strip \
+    "$DEPLOYQT" InputLeap.app -no-strip -no-codesign \
     -executable="$B_INPUTLEAPC" \
     -executable="$B_INPUTLEAPS" || exit 1
+    xattr -cr InputLeap.app || exit 1
     codesign --force --deep --sign - \
         --identifier io.github.inputleap.dragdrop InputLeap.app || exit 1
     codesign --verify --deep --strict InputLeap.app || exit 1
     success "Bundle created successfully"
 fi
+
+# Do not let a terminal-color reset determine the packaging result when this
+# script runs without an interactive terminal (for example, under Ninja/CI).
+exit 0

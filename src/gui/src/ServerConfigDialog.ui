@@ -398,6 +398,49 @@ Double click on a screen to edit its settings.</string>
            </layout>
           </item>
           <item>
+           <layout class="QHBoxLayout" name="horizontalLayoutHysteresis">
+            <item>
+             <widget class="QLabel" name="m_pLabelSwitchHysteresis">
+              <property name="text">
+               <string>Edge stability distance</string>
+              </property>
+              <property name="toolTip">
+               <string>Moves the pointer this far inside the destination screen to prevent accidental bounce-back.</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="horizontalSpacerHysteresis">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="m_pSpinBoxSwitchHysteresis">
+              <property name="minimum">
+               <number>0</number>
+              </property>
+              <property name="maximum">
+               <number>64</number>
+              </property>
+              <property name="value">
+               <number>8</number>
+              </property>
+              <property name="suffix">
+               <string> px</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
            <spacer>
             <property name="orientation">
              <enum>Qt::Vertical</enum>

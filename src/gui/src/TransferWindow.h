@@ -29,6 +29,7 @@ public:
 
 Q_SIGNALS:
     void notificationRequested(const QString& title, const QString& message);
+    void activityChanged(bool active, const QString& detail);
 
 private Q_SLOTS:
     void cancelSelected();
@@ -71,6 +72,7 @@ private:
     TransferRecord* selectedRecord();
     TransferRecord& recordForId(const QString& id);
     void updateRecord(TransferRecord& record);
+    void publishActivity();
     void requestControl(const TransferRecord& record, const QString& action);
     void loadHistory();
     void saveHistory();

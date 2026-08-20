@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>434</width>
-    <height>437</height>
+    <height>475</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -489,6 +489,16 @@
       </widget>
      </item>
     </layout>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="m_pCheckBoxInvertScroll">
+     <property name="toolTip">
+      <string>Use this when the two computers have different natural-scrolling preferences.</string>
+     </property>
+     <property name="text">
+      <string>Reverse scrolling on this computer</string>
+     </property>
+    </widget>
    </item>
    <item>
     <spacer>

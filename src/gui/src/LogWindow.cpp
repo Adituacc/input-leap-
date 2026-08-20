@@ -80,6 +80,11 @@ void LogWindow::appendRaw(const QString& text)
     buffer_.append(s_text_line.arg(text));
 }
 
+QString LogWindow::contents() const
+{
+    return ui_->m_pLogOutput->toPlainText() + buffer_;
+}
+
 void LogWindow::flushBuffer()
 {
     if (!buffer_.isEmpty()) {

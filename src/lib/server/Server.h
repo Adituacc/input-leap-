@@ -30,6 +30,7 @@
 #include "inputleap/TransferProgress.h"
 #include "inputleap/TransferReceiver.h"
 #include "inputleap/TransferResumeCoordinator.h"
+#include "inputleap/CursorHandoff.h"
 #include "base/Fwd.h"
 #include "base/Event.h"
 #include "base/EventTarget.h"
@@ -472,6 +473,13 @@ private:
     bool m_switchTwoTapEngaged;
     bool m_switchTwoTapArmed;
     std::int32_t m_switchTwoTapZone;
+
+    // Prevent an injected recenter event from immediately reversing a
+    // successful handoff. The inset also keeps entry points away from the
+    // destination edge on mixed-DPI and mixed-resolution desktops.
+    std::int32_t m_switchHysteresis;
+    CursorHandoffGuard m_handoffGuard;
+    Stopwatch m_handoffTimer;
 
     // modifiers needed before switching
     bool m_switchNeedsShift;

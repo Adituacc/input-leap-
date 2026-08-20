@@ -62,8 +62,6 @@
 #include <stdio.h>
 #include <sstream>
 
-#define RETRY_TIME 1.0
-
 namespace inputleap {
 
 ClientApp::ClientApp(IEventQueue* events, CreateTaskBarReceiverFunc createTaskBarReceiver) :
@@ -199,31 +197,14 @@ void ClientApp::updateStatus(const std::string& msg)
 void
 ClientApp::resetRestartTimeout()
 {
-    // retry time can nolonger be changed
-    //s_retryTime = 0.0;
+    reconnect_backoff_.reset();
 }
 
 
 double
 ClientApp::nextRestartTimeout()
 {
-    // retry at a constant rate (Issue 52)
-    return RETRY_TIME;
-
-    /*
-    // choose next restart timeout.  we start with rapid retries
-    // then slow down.
-    if (s_retryTime < 1.0) {
-    s_retryTime = 1.0;
-    }
-    else if (s_retryTime < 3.0) {
-    s_retryTime = 3.0;
-    }
-    else {
-    s_retryTime = 5.0;
-    }
-    return s_retryTime;
-    */
+    return reconnect_backoff_.next_delay();
 }
 
 
@@ -252,6 +233,7 @@ ClientApp::handle_client_restart(const Event&, EventQueueTimer* timer)
     // discard old timer
     m_events->remove_handler(EventType::TIMER, timer);
     m_events->deleteTimer(timer);
+    restart_scheduled_ = false;
 
     // reconnect
     startClient();
@@ -261,8 +243,14 @@ ClientApp::handle_client_restart(const Event&, EventQueueTimer* timer)
 void
 ClientApp::scheduleClientRestart(double retryTime)
 {
+    if (restart_scheduled_) {
+        return;
+    }
+
     // install a timer and handler to retry later
-    LOG_DEBUG("retry in %.0f seconds", retryTime);
+    restart_scheduled_ = true;
+    LOG_PRINT("INPUTLEAP_STATUS|reconnecting|Retrying in %.1f seconds", retryTime);
+    LOG_DEBUG("retry in %.1f seconds", retryTime);
     EventQueueTimer* timer = m_events->newOneShotTimer(retryTime, nullptr);
     m_events->add_handler(EventType::TIMER, timer,
                           [this, timer](const Event& event) { handle_client_restart(event, timer); });
@@ -274,6 +262,8 @@ void ClientApp::handle_client_connected()
     // using CLOG_PRINT here allows the GUI to see that the client is connected
     // regardless of which log level is set
     LOG_PRINT("connected to server");
+    LOG_PRINT("INPUTLEAP_STATUS|connected|%s connection established",
+              args().m_enableCrypto ? "Secure" : "Unencrypted");
     resetRestartTimeout();
     updateStatus();
 }
@@ -300,6 +290,7 @@ void ClientApp::handle_client_failed(const Event& e)
 void ClientApp::handle_client_disconnected()
 {
     LOG_NOTE("disconnected from server");
+    LOG_PRINT("INPUTLEAP_STATUS|disconnected|Connection lost");
     if (!args().m_restartable) {
         m_events->add_event(EventType::QUIT);
     }
@@ -372,6 +363,7 @@ ClientApp::startClient()
             LOG_NOTE("started client");
         }
 
+        LOG_PRINT("INPUTLEAP_STATUS|connecting|Connecting to the controlling computer");
         m_client->connect();
 
         updateStatus();

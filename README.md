@@ -56,6 +56,12 @@ speed, persistent history, pause/cancel/retry controls, completion
 notifications, and automatic continuation from receiver-confirmed offsets
 after a temporary connection loss.
 
+The connection dashboard now reports connecting and recovery states, can test a
+remote address before startup, links to required macOS permissions, and exports
+sanitized diagnostics. Mixed-DPI cursor handoff includes edge hysteresis and
+safe destination insets; each controlled computer can also reverse its scroll
+direction. See the [cross-platform reliability guide](doc/cross-platform-reliability.md).
+
 ### Contact info:
 
 - `#inputleap` on LiberaChat IRC network, for support with Input Leap.
@@ -102,14 +108,14 @@ and how the issue gets resolved.
 ### Usage
 
 1. Install and run Input Leap on each machine that will be sharing.
-2. On the machine with the keyboard and mouse, make it the server.
-3. Click the "Configure server" button and drag a new screen onto the grid for
-    each client machine.
+2. On the machine with the keyboard and mouse, select **Control other computers**.
+3. Click **Arrange Screens & Controls** and drag a new screen onto the grid for
+    each computer you want to control.
 4. Ensure the "screen name" matches exactly (case-sensitive) for each configured
-    screen -- the clients' Input Leap windows will tell you their screen names
-    (just above the server IP).
-5. On the client(s), put in the server machine's IP address (or use Bonjour/auto
-    configuration when prompted) and "start" them.
+    screen -- the other computers' Input Leap windows show their screen names.
+5. On each controlled computer, select **Let another computer control this one**,
+    enter the controlling computer's address (or use automatic discovery), and
+    click **Start**.
 
 You should see `Input Leap is running` on both server and clients.
 

@@ -37,8 +37,9 @@
 //   7: serial key activation
 //   8: Visual Studio 2015 support
 //   9: synergy->barrier and de-commercialized
+//  10: simplified role selection and reliability-focused onboarding
 //
-const int kWizardVersion = 9;
+const int kWizardVersion = 10;
 
 class QSettings;
 class SettingsDialog;

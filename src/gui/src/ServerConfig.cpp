@@ -48,6 +48,7 @@ ServerConfig::ServerConfig(QSettings* settings, int numColumns, int numRows ,
     m_Screens(),
     m_NumColumns(numColumns),
     m_NumRows(numRows),
+    m_SwitchHysteresis(8),
     m_ServerName(serverName),
     m_IgnoreAutoConfigClient(false),
     m_EnableDragAndDrop(false),
@@ -116,6 +117,7 @@ void ServerConfig::saveSettings()
     settings().setValue("switchDelay", switchDelay());
     settings().setValue("hasSwitchDoubleTap", hasSwitchDoubleTap());
     settings().setValue("switchDoubleTap", switchDoubleTap());
+    settings().setValue("switchHysteresis", switchHysteresis());
     settings().setValue("switchCornerSize", switchCornerSize());
     settings().setValue("ignoreAutoConfigClient", ignoreAutoConfigClient());
     settings().setValue("enableDragAndDrop", enableDragAndDrop());
@@ -162,6 +164,7 @@ void ServerConfig::loadSettings()
     setSwitchDelay(settings().value("switchDelay", 250).toInt());
     haveSwitchDoubleTap(settings().value("hasSwitchDoubleTap", false).toBool());
     setSwitchDoubleTap(settings().value("switchDoubleTap", 250).toInt());
+    setSwitchHysteresis(settings().value("switchHysteresis", 8).toInt());
     setSwitchCornerSize(settings().value("switchCornerSize").toInt());
     setIgnoreAutoConfigClient(settings().value("ignoreAutoConfigClient").toBool());
     setEnableDragAndDrop(settings().value("enableDragAndDrop", true).toBool());
@@ -266,6 +269,8 @@ QTextStream& operator<<(QTextStream& outStream, const ServerConfig& config)
 
     if (config.hasSwitchDoubleTap())
         outStream << "\t" << "switchDoubleTap = " << config.switchDoubleTap() << "\n";
+
+    outStream << "\t" << "switchHysteresis = " << config.switchHysteresis() << "\n";
 
     outStream << "\t" << "switchCorners = none ";
     for (int i = 0; i < config.switchCorners().size(); i++) {

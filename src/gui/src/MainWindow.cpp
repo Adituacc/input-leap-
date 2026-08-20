@@ -32,7 +32,11 @@
 #include "ProcessorArch.h"
 #include "SslCertificate.h"
 #include "TransferWindow.h"
+#include "ConnectionStatus.h"
+#include "DiagnosticBundle.h"
+#include "UpdateChecker.h"
 #include "base/String.h"
+#include "common/Version.h"
 #include "common/DataDirectories.h"
 #include "net/FingerprintDatabase.h"
 #include "net/SecureUtils.h"
@@ -47,6 +51,9 @@
 #include <QFileDialog>
 #include <QDesktopServices>
 #include <QRegularExpression>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QNetworkReply>
 
 #if defined(Q_OS_MAC)
 #include <ApplicationServices/ApplicationServices.h>
@@ -83,6 +90,8 @@ const char* icon_file_for_connection_state(AppConnectionState state)
         default:
         case AppConnectionState::DISCONNECTED: return ":/res/icons/128x128/input-leap-disconnected-mask.png";
         case AppConnectionState::CONNECTING:   return ":/res/icons/128x128/input-leap-disconnected-mask.png";
+        case AppConnectionState::RECONNECTING: return ":/res/icons/128x128/input-leap-disconnected-mask.png";
+        case AppConnectionState::ERROR:        return ":/res/icons/128x128/input-leap-disconnected-mask.png";
         case AppConnectionState::CONNECTED:    return ":/res/icons/128x128/input-leap-connected-mask.png";
         case AppConnectionState::TRANSFERRING: return ":/res/icons/128x128/input-leap-transfering-mask.png";
     }
@@ -91,6 +100,8 @@ const char* icon_file_for_connection_state(AppConnectionState state)
         default:
         case AppConnectionState::DISCONNECTED: return ":/res/icons/128x128/input-leap-disconnected.png";
         case AppConnectionState::CONNECTING:   return ":/res/icons/128x128/input-leap-disconnected.png";
+        case AppConnectionState::RECONNECTING: return ":/res/icons/128x128/input-leap-disconnected.png";
+        case AppConnectionState::ERROR:        return ":/res/icons/128x128/input-leap-disconnected.png";
         case AppConnectionState::CONNECTED:    return ":/res/icons/128x128/input-leap-connected.png";
         case AppConnectionState::TRANSFERRING: return ":/res/icons/128x128/input-leap-transfering.png";
     }
@@ -103,6 +114,8 @@ const char* icon_name_for_connection_state(AppConnectionState state)
         default:
         case AppConnectionState::DISCONNECTED: return "input-leap-disconnected";
         case AppConnectionState::CONNECTING: return "input-leap-disconnected";
+        case AppConnectionState::RECONNECTING: return "input-leap-disconnected";
+        case AppConnectionState::ERROR: return "input-leap-disconnected";
         case AppConnectionState::CONNECTED: return "input-leap-connected";
         case AppConnectionState::TRANSFERRING: return "input-leap-transfering";
     }
@@ -180,6 +193,17 @@ MainWindow::MainWindow(QSettings& settings, AppConfig& appConfig) :
     ui_->m_pLabelPadlock->setPixmap(QPixmap(":/res/icons/64x64/padlock.png").scaledToHeight(fontMetrics().height() * 1.5, Qt::SmoothTransformation));
     ui_->frame_fingerprint_details->hide();
 
+#if defined(Q_OS_MAC)
+    const bool accessibilityReady = AXIsProcessTrusted();
+    ui_->m_pButtonPermissions->setVisible(!accessibilityReady);
+    if (!accessibilityReady) {
+        ui_->m_pStatusDetail->setText(tr(
+            "macOS Accessibility permission is required to share the mouse and keyboard."));
+    }
+#else
+    ui_->m_pButtonPermissions->hide();
+#endif
+
     updateSSLFingerprint();
 
     connect(ui_->toolbutton_show_fingerprint, &QToolButton::clicked, this, [this](bool checked)
@@ -202,6 +226,16 @@ MainWindow::MainWindow(QSettings& settings, AppConfig& appConfig) :
                     m_pTrayIcon->showMessage(title, message,
                                              QSystemTrayIcon::Information,
                                              5000);
+                }
+            });
+    connect(m_pTransferWindow, &TransferWindow::activityChanged,
+            this, [this](bool active, const QString& detail) {
+                ui_->m_pStatusDetail->setText(detail);
+                if (active) {
+                    set_connection_state(AppConnectionState::TRANSFERRING);
+                }
+                else if (connection_state() == AppConnectionState::TRANSFERRING) {
+                    set_connection_state(AppConnectionState::CONNECTED);
                 }
             });
 
@@ -327,6 +361,8 @@ void MainWindow::createMenuBar()
     main_menu_->addSeparator();
     main_menu_->addAction(ui_->m_pActionQuit);
     m_pMenuHelp->addAction(ui_->m_pActionAbout);
+    m_pMenuHelp->addAction(tr("Check for Updates..."),
+                           this, &MainWindow::checkForUpdates);
 
 #ifdef Q_OS_DARWIN
     m_pMenuHelp->addAction(ui_->m_pActionSave);
@@ -467,8 +503,16 @@ void MainWindow::appendLogRaw(const QString& text)
 
 void MainWindow::updateFromLogLine(const QString &line)
 {
-    // TODO: this code makes Andrew cry
-    checkConnected(line);
+    ConnectionStatusUpdate update;
+    if (parseConnectionStatusLine(line, update)) {
+        ui_->m_pStatusDetail->setText(update.detail);
+        set_connection_state(update.state);
+    }
+    else {
+        // Compatibility with older backend processes that do not emit the
+        // structured status marker yet.
+        checkConnected(line);
+    }
     checkFingerprint(line);
 }
 
@@ -913,14 +957,21 @@ void MainWindow::set_connection_state(AppConnectionState state)
     if (connection_state() == state)
         return;
 
-    if (state == AppConnectionState::CONNECTED || state == AppConnectionState::CONNECTING)
+    const bool running = state == AppConnectionState::CONNECTED ||
+                         state == AppConnectionState::CONNECTING ||
+                         state == AppConnectionState::RECONNECTING ||
+                         state == AppConnectionState::TRANSFERRING ||
+                         (state == AppConnectionState::ERROR &&
+                          m_ExpectedRunningState == kStarted);
+
+    if (running)
     {
         disconnect(ui_->m_pButtonToggleStart, &QPushButton::clicked, ui_->m_pActionStartCmdApp, &QAction::trigger);
         connect(ui_->m_pButtonToggleStart, &QPushButton::clicked, ui_->m_pActionStopCmdApp, &QAction::trigger);
         ui_->m_pButtonToggleStart->setText(tr("&Stop"));
         ui_->m_pButtonReload->setEnabled(true);
     }
-    else if (state == AppConnectionState::DISCONNECTED)
+    else
     {
         disconnect(ui_->m_pButtonToggleStart, &QPushButton::clicked, ui_->m_pActionStopCmdApp, &QAction::trigger);
         connect(ui_->m_pButtonToggleStart, &QPushButton::clicked, ui_->m_pActionStartCmdApp, &QAction::trigger);
@@ -928,13 +979,8 @@ void MainWindow::set_connection_state(AppConnectionState state)
         ui_->m_pButtonReload->setEnabled(false);
     }
 
-    bool connected = false;
-    if (state == AppConnectionState::CONNECTED || state == AppConnectionState::TRANSFERRING) {
-        connected = true;
-    }
-
-    ui_->m_pActionStartCmdApp->setEnabled(!connected);
-    ui_->m_pActionStopCmdApp->setEnabled(connected);
+    ui_->m_pActionStartCmdApp->setEnabled(!running);
+    ui_->m_pActionStopCmdApp->setEnabled(running);
 
     switch (state)
     {
@@ -946,19 +992,31 @@ void MainWindow::set_connection_state(AppConnectionState state)
             ui_->m_pLabelPadlock->hide();
         }
 
-        setStatus(tr("InputLeap is running."));
+        setStatus(connectionStateTitle(state));
+        if (ui_->m_pStatusDetail->text().isEmpty()) {
+            ui_->m_pStatusDetail->setText(tr("Mouse, keyboard, clipboard, and transfers are ready."));
+        }
 
         break;
     }
     case AppConnectionState::CONNECTING:
         ui_->m_pLabelPadlock->hide();
-        setStatus(tr("InputLeap is starting."));
+        setStatus(connectionStateTitle(state));
+        break;
+    case AppConnectionState::RECONNECTING:
+        ui_->m_pLabelPadlock->hide();
+        setStatus(connectionStateTitle(state));
         break;
     case AppConnectionState::DISCONNECTED:
         ui_->m_pLabelPadlock->hide();
-        setStatus(tr("InputLeap is not running."));
+        setStatus(connectionStateTitle(state));
+        break;
+    case AppConnectionState::ERROR:
+        ui_->m_pLabelPadlock->hide();
+        setStatus(connectionStateTitle(state));
         break;
     case AppConnectionState::TRANSFERRING:
+        setStatus(connectionStateTitle(state));
         break;
     default:
         break;
@@ -1456,6 +1514,161 @@ void MainWindow::on_m_pCheckBoxAutoConfig_toggled(bool checked)
         ui_->m_pComboServerList->clear();
         ui_->m_pComboServerList->hide();
     }
+}
+
+void MainWindow::on_m_pButtonTestConnection_clicked()
+{
+    if (app_role() == AppRole::Server) {
+        ui_->m_pStatusDetail->setText(
+            tr("This computer will listen on port %1 when sharing starts.")
+                .arg(appConfig().port()));
+        return;
+    }
+
+    QString host;
+    if (ui_->m_pCheckBoxAutoConfig->isChecked() &&
+        ui_->m_pComboServerList->count() > 0) {
+        host = ui_->m_pComboServerList->currentText();
+    }
+    else {
+        host = ui_->m_pLineEditHostname->text().trimmed();
+    }
+
+    if (host.isEmpty()) {
+        ui_->m_pStatusDetail->setText(
+            tr("Enter or automatically discover a controlling computer first."));
+        return;
+    }
+
+    ui_->m_pButtonTestConnection->setEnabled(false);
+    ui_->m_pStatusDetail->setText(tr("Testing %1:%2...").arg(host).arg(appConfig().port()));
+
+    auto* socket = new QTcpSocket(this);
+    const QPointer<QTcpSocket> guardedSocket(socket);
+    const auto finish = [this, guardedSocket](bool success, const QString& detail) {
+        if (!guardedSocket ||
+            guardedSocket->property("inputLeapFinished").toBool()) {
+            return;
+        }
+        guardedSocket->setProperty("inputLeapFinished", true);
+        ui_->m_pButtonTestConnection->setEnabled(true);
+        ui_->m_pStatusDetail->setText(detail);
+        (void) success;
+        guardedSocket->abort();
+        guardedSocket->deleteLater();
+    };
+
+    connect(socket, &QTcpSocket::connected, this, [finish]() {
+        finish(true, QObject::tr("The controlling computer is reachable. Start sharing to authenticate."));
+    });
+    connect(socket, &QTcpSocket::errorOccurred, this,
+            [finish](QAbstractSocket::SocketError) {
+                finish(false, QObject::tr(
+                    "Could not reach that computer. Check its address, firewall, and that Input Leap is running."));
+            });
+    QTimer::singleShot(3000, this, [finish]() {
+        finish(false, QObject::tr(
+            "Connection test timed out. Check that both computers are on the same network."));
+    });
+    socket->connectToHost(host, static_cast<quint16>(appConfig().port()));
+}
+
+void MainWindow::on_m_pButtonDiagnostics_clicked()
+{
+    const auto defaultName = QDir(QStandardPaths::writableLocation(
+        QStandardPaths::DocumentsLocation))
+                                 .filePath(QStringLiteral(
+                                     "input-leap-diagnostics-%1.txt")
+                                               .arg(QDate::currentDate().toString(
+                                                   QStringLiteral("yyyy-MM-dd"))));
+    const auto filename = QFileDialog::getSaveFileName(
+        this, tr("Save diagnostic report"), defaultName,
+        tr("Text files (*.txt)"));
+    if (filename.isEmpty()) {
+        return;
+    }
+
+    QSaveFile file(filename);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::warning(this, tr("Diagnostic report"),
+                             tr("The diagnostic report could not be written."));
+        return;
+    }
+
+    const auto role = app_role() == AppRole::Server
+                          ? tr("Controls other computers")
+                          : tr("Controlled by another computer");
+    const auto report = createDiagnosticReport(
+        connection_state(), role, ui_->m_pCheckBoxAutoConfig->isChecked(),
+        appConfig().getCryptoEnabled(), m_pLogWindow->contents());
+    file.write(report.toUtf8());
+    if (!file.commit()) {
+        QMessageBox::warning(this, tr("Diagnostic report"),
+                             tr("The diagnostic report could not be saved."));
+        return;
+    }
+
+    ui_->m_pStatusDetail->setText(
+        tr("Saved a sanitized diagnostic report to %1.").arg(filename));
+}
+
+void MainWindow::on_m_pButtonPermissions_clicked()
+{
+#if defined(Q_OS_MAC)
+    QDesktopServices::openUrl(QUrl(QStringLiteral(
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")));
+    ui_->m_pStatusDetail->setText(tr(
+        "Enable Input Leap in Accessibility, then return here and restart sharing."));
+#endif
+}
+
+void MainWindow::checkForUpdates()
+{
+    auto* manager = new QNetworkAccessManager(this);
+    QNetworkRequest request(QUrl(QStringLiteral(
+        "https://api.github.com/repos/Adituacc/input-leap-/releases/latest")));
+    request.setRawHeader("Accept", "application/vnd.github+json");
+    request.setRawHeader("User-Agent", "InputLeap-Update-Checker");
+
+    auto* reply = manager->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, manager, reply]() {
+        const auto cleanup = [manager, reply]() {
+            reply->deleteLater();
+            manager->deleteLater();
+        };
+        if (reply->error() != QNetworkReply::NoError) {
+            QMessageBox::warning(
+                this, tr("Check for updates"),
+                tr("The latest release could not be checked. Try again when you are online."));
+            cleanup();
+            return;
+        }
+
+        const auto document = QJsonDocument::fromJson(reply->readAll());
+        const auto latest = document.object().value(QStringLiteral("tag_name")).toString();
+        const auto download = document.object().value(QStringLiteral("html_url")).toString();
+        if (latest.isEmpty() || download.isEmpty()) {
+            QMessageBox::warning(this, tr("Check for updates"),
+                                 tr("The release information was incomplete."));
+            cleanup();
+            return;
+        }
+
+        if (isNewerVersion(latest, QString::fromLatin1(kVersion))) {
+            const auto answer = QMessageBox::question(
+                this, tr("Update available"),
+                tr("Input Leap %1 is available. Open the verified download page?")
+                    .arg(latest));
+            if (answer == QMessageBox::Yes) {
+                QDesktopServices::openUrl(QUrl(download));
+            }
+        }
+        else {
+            QMessageBox::information(this, tr("Check for updates"),
+                                     tr("You are using the latest release."));
+        }
+        cleanup();
+    });
 }
 
 void MainWindow::bonjourInstallFinished()
