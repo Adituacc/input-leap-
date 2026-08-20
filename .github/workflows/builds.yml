@@ -513,6 +513,7 @@ jobs:
       - name: Configure build system
         run: |
           New-Item -Force -ItemType Directory -Path .\build | Out-Null
+          $installPrefix = Join-Path $env:GITHUB_WORKSPACE 'build\input-leap-install'
 
           cd build
 
@@ -520,7 +521,8 @@ jobs:
             -DQT_DEFAULT_MAJOR_VERSION=${{matrix.qt-major}} `
             -DINPUTLEAP_VERSION_DESC=${{ (env.B_BUILD_TYPE == 'Release') && 'release' || 'git' }} `
             -DINPUTLEAP_BUILD_GULRAK_FILESYSTEM=${{ matrix.qt-major == '5' && '1' || '0' }} `
-            -DDNSSD_LIB="$env:BONJOUR_SDK_HOME\Lib\x64\dnssd.lib" -D CMAKE_INSTALL_PREFIX=input-leap-install
+            -DDNSSD_LIB="$env:BONJOUR_SDK_HOME\Lib\x64\dnssd.lib" `
+            "-DCMAKE_INSTALL_PREFIX=$installPrefix"
         env:
           VS_PATH: '%ProgramFiles%\Microsoft Visual Studio\2022'
           CMAKE_GEN: 'Visual Studio 17 2022'
