@@ -530,7 +530,9 @@ jobs:
 
       - name: Run build system
         run: |
-          cmake --build build --config $env:B_BUILD_TYPE --target install
+          $installPrefix = Join-Path $env:GITHUB_WORKSPACE 'build\input-leap-install'
+          cmake --build build --config $env:B_BUILD_TYPE
+          cmake --install build --config $env:B_BUILD_TYPE --prefix $installPrefix
           cmake --build build --config $env:B_BUILD_TYPE --target unittests guiunittests
 
       - name: Run tests
