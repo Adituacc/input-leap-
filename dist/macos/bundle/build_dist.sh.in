@@ -43,14 +43,20 @@ cp -r "$B_BINDIR" "$B_MACOS" || exit 1
 xattr -cr InputLeap.app || exit 1
 
 DEPLOYQT=@QT_DEPLOY_TOOL@
+B_DEPLOY_CODESIGN_ARG=""
+B_DEPLOY_HELP="$("$DEPLOYQT" -h 2>&1)"
+case "$B_DEPLOY_HELP" in
+    *-no-codesign*) B_DEPLOY_CODESIGN_ARG="-no-codesign" ;;
+esac
 
 # Use macdeployqt to include libraries, then give the complete bundle a stable
 # ad-hoc signature. This does not notarize the app, but it gives macOS TCC one
 # consistent application identity for Accessibility and Input Monitoring.
 if [ "$B_BUILDTYPE" = "Release" ]; then
     info "Building Release disk image (dmg)"
+    # shellcheck disable=SC2086
     "$DEPLOYQT" InputLeap.app \
-    -no-codesign \
+    $B_DEPLOY_CODESIGN_ARG \
     -executable="$B_INPUTLEAPC" \
     -executable="$B_INPUTLEAPS" || exit 1
     # Some synced/file-provider workspaces recreate Finder attributes as soon
@@ -76,7 +82,8 @@ if [ "$B_BUILDTYPE" = "Release" ]; then
 else
     warn "Disk image (dmg) only created for Release builds"
     info "Building debug bundle"
-    "$DEPLOYQT" InputLeap.app -no-strip -no-codesign \
+    # shellcheck disable=SC2086
+    "$DEPLOYQT" InputLeap.app -no-strip $B_DEPLOY_CODESIGN_ARG \
     -executable="$B_INPUTLEAPC" \
     -executable="$B_INPUTLEAPS" || exit 1
     xattr -cr InputLeap.app || exit 1
